@@ -2,8 +2,9 @@
 #!/bin/bash
 
 ## Bash script to open up a specific Jira ticket, provided
-## as a parameter to this script, in a web browser. Yes I
-## am lazy.
+## as a parameter to this script, in a web browser.
+##
+## Yes I am lazy.
 
 ############################################################
 ## BEGIN SCRIPT ##

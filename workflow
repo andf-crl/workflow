@@ -1,9 +1,22 @@
 #!/bin/bash
 
-## Bash script to automate MongoDB new doc branch setup.
-## You must pass your intended branchname as the single
-## positional parameter when you invoke this script, like:
+## Bash script to automate the initial setup of new docs
+## work. This script:
+##
+##   - Clones your fork (of the upstream docs repo)
+##   - Fetches the latest state of upstream master
+##   - Creates a new branch based on your provided branchname
+##   - Opens up VSCode with the fresh clone / branch as workspace
+
+## You must pass your intended branchname as a parameter to this
+## script, like:
+##
 ##   workflow DOC-12345-fix-typo-in-example
+
+## To make use of the `code` command to open VSCode from the
+## command line, you'll need to have followed these instructions:
+##
+##   https://code.visualstudio.com/docs/editor/command-line#_launching-from-command-line
 
 ############################################################
 ## YOUR VALUES ##

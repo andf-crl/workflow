@@ -1,5 +1,8 @@
 #!/bin/bash
 
+## Brings your fork up to speed with upstream, and informs
+## you of how far behind you were!
+
 ############################################################
 ## YOUR VALUES ##
 #################

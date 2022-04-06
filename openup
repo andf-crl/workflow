@@ -8,6 +8,11 @@
 ## rectify situations where multiple possible target repo
 ## directories are found: just errors out in these cases.
 
+## To make use of the `code` command to open VSCode from the
+## command line, you'll need to have followed these instructions:
+##
+##   https://code.visualstudio.com/docs/editor/command-line#_launching-from-command-line
+
 ############################################################
 ## YOUR VALUES ##
 #################
