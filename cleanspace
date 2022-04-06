@@ -1,0 +1,35 @@
+#!/bin/bash
+
+## Cleans out all local staging builds  nested in your
+## docs workspace, and let's you know how much space was
+## freed up! Essentially a `make clean` for every docs
+## repo clone in your WORKSPACE.
+
+############################################################
+## YOUR VALUES ##
+#################
+
+## Your docs workspace (i.e. where to git clone to)
+## If you use a ~ in the path, don't quote the value:
+WORKSPACE=~/Documents/docs_workspace
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+## Just for fun, how much space are we using presently for
+## our staging builds:
+USED_RAW=`du -sck $WORKSPACE/*/_site $WORKSPACE/*/vendor $WORKSPACE/*/.jekyll-cache/Jekyll/Cache/RemoteInclude 2>&1 | cut -f 1 | tail -n 1`
+
+if [ $USED_RAW -gt 0 ]; then
+    USED=`echo "scale=2;$USED_RAW/1024/1024" | bc`
+    echo -e "\nworking ...\n"
+    # Essentially a manual `make clean` for all found docs repo clones:
+    rm -rf $WORKSPACE/*/_site
+    rm -rf $WORKSPACE/*/vendor
+    rm -rf $WORKSPACE/*/.jekyll-cache/Jekyll/Cache/RemoteInclude
+    echo -e "\nFreed up $USED GB!\n"
+else
+    echo "No local staging builds found: nothing to clean up! Exiting ..."
+fi
+
