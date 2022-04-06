@@ -1,6 +1,6 @@
 # Core Workflow Tools
 Contains a series of Bash wrappers to automate using a git-based docstools workflow (like at CRL). For best results, 
-place in $PATH!
+place in `$PATH`!
 
 Comprised of the following tools:
 
@@ -15,50 +15,53 @@ Stages the repo for viewing in a webbrowser.
 
 _Usage:_ `stage` from within the git repo you wish to stage.
 
-**NOTE**: not yet implemented
+**NOTE**: Not yet implemented
 
 ## review
 Commits your changes to git, and submits for code review using the MDB internal Rietveld tool. If the first round of CR, 
 uses the new CR ID. If a subsequent round, re-uses the existing one. Requires locally storing the CR ID for now.
 
-_Usage:_ `review` from within the git repo you wish to submit.
+_Usage:_ `review` from within the git repo you wish to submit. Ideally ran from the VS Code terminal in the workspace 
+prepared for you by `workflow`
 
-**NOTE**: not yet implemented
+**NOTE**: Not yet implemented
 
 ## push
 Once LGTM has been obtained, submits the code as-is to Git Hub, and provides links to the next three web-based steps (PR 
 in GitHub, Close JIRA, close CR). Also supports force-pushing with the `-f` flag.
 
-_Usage:_ `push` from within the git repo you wish to publish.
+_Usage:_ `push` from within the git repo you wish to publish. Ideally ran from the VS Code terminal in the workspace
+prepared for you by `workflow`
 
-**NOTE**: not yet implemented
+**NOTE**: Not yet implemented
 
 # Supporting Tools
 Contains a collection of small support scripts.
 
 ## rebasefork
 Updates your forked copy of docs with the latest from upstream. `workflow` automatically fetches the latest state of 
-upstream's `master` branch on run, so `rebasefork` only serves to save us time on `workflow`'s  initial clone & rebase.
+upstream's `master` branch each run, so `rebasefork` only serves to save us time on `workflow`'s  initial clone & rebase 
+step.
 
 # Example workflow usage, using these tools:
 
-**Note**: several components not yet implemented
+**Note**: Several components not yet implemented
 
-1. `workflow DOC-12345-fix-typo-in-example`
+1. `workflow DOC-1234-fix-typo-in-example`
 
-2. In resulting VSCode window, edit appropriate RST and YAML files to address concerns raised in Jira ticket.
+2. In resulting VSCode window, edit appropriate Markdown files to address concerns raised in Jira ticket.
 
-3. `stage` within VSCode terminal to preview changes in web browser (via autobuilder)
+3. `stage` within VSCode terminal to preview changes via local Makefile staging
 
-4. Repeat steps 2 and 3 until ready for review.
+4. Repeat steps 2 and 3 until ready for review
 
-5. `review` from within the VSCode terminal to submit for CR when ready for feedback
+5. `review` from within the VSCode terminal to submit to Reviewable when ready for feedback
 
 6. One of:
 
-   - CR is returned with LGTM: `push` from within VSCode terminal to create PR
+   - CR is returned with LGTM: `push` from within VSCode terminal to create PR and open the resulting GH page
 
-   - CR comes back with feedback. Repeat steps 4-5 (edit - `stage` - `review`).
+   - CR comes back with feedback. Repeat steps 2-5 (edit - `stage` - `review`)
 
 Occassionally, run `rebasefork`.
 
