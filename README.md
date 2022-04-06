@@ -5,7 +5,7 @@ place in `$PATH`!
 Comprised of the following tools:
 
 ## workflow
-Checks out a new branch in your local docs workspace and sets it up for work, then opens a new VS Code workspace from 
+Checks out a new branch in your local `$WORKSPACE`, sets it up for work, then opens a new VS Code workspace from 
 that directory.
 
 _Usage:_ `workflow DOC-1234-fix-typo-in-example` from anywhere on your machine.
@@ -43,6 +43,11 @@ Updates your forked copy of docs with the latest from upstream. `workflow` autom
 upstream's `master` branch each run, so `rebasefork` only serves to save us time on `workflow`'s  initial clone & rebase 
 step.
 
+## cleanspace
+Clean up any staging builds from all local git repos in `$WORKSPACE`.
+
+
+
 # Example workflow usage, using these tools:
 
 **Note**: Several components not yet implemented
@@ -63,5 +68,5 @@ step.
 
    - CR comes back with feedback. Repeat steps 2-5 (edit - `stage` - `review`)
 
-Occassionally, run `rebasefork`.
+Occassionally, run `rebasefork` and `cleanspace`.
 
