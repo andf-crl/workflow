@@ -34,8 +34,8 @@ fi
 
 JIRA_URL="https://cockroachlabs.atlassian.net/browse/$JIRA"
 
-# MACOS ONLY: Open staged build in browser:
+# MACOS ONLY: Open $JIRA_URL in web browser:
 open $JIRA_URL
 
-# LINUX ONLY: Open staged build in browser (tries everything):
+# LINUX ONLY: Open $JIRA_URL in web browser (tries everything):
 #xdg-open $JIRA_URL || sensible-browser $JIRA_URL || x-www-browser $JIRA_URL || gnome-open $JIRA_URL
