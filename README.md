@@ -41,7 +41,8 @@ Contains a collection of small support scripts.
 ## rebasefork
 Updates your forked copy of docs with the latest from upstream. `workflow` automatically fetches the latest state of 
 upstream's `master` branch each run, so `rebasefork` only serves to save us time on `workflow`'s  initial clone & rebase 
-step.
+step. You can optionally use the `-f` flag to completely reset your fork to match current upstream exactly: doing so 
+discards any fork-specific commits!
 
 ## cleanspace
 Clean up any staging builds from all local git repos in `$WORKSPACE`.
