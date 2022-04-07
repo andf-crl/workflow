@@ -1,7 +1,10 @@
 #!/bin/bash
 
 ## Brings your fork up to speed with upstream, and informs
-## you of how far behind you were!
+## you of how far behind you were! You can supply the -f
+## flag to OVERWRITE your forked repo to be the same as
+## upstream -- useful if you mangle your fork and want to
+## reset it.
 
 ############################################################
 ## YOUR VALUES ##
@@ -14,7 +17,26 @@ GITUSER=your_git_user
 ## BEGIN SCRIPT ##
 ##################
 
-TMPDIR=/tmp/deleteme$$
+TMPDIR=/tmp/rebasefork$$
+
+FORCE=""
+
+## Check for FORCE override: for resetting your fork to be
+## identical to upstream. WARNING: destroys any fork-specific
+## commits!
+while getopts ":f" opt; do
+  case ${opt} in
+    f )
+      FORCE=1
+      ;;
+    \? )
+      echo -e "\nERROR: Invalid option: $OPTARG" 1>&2
+      echo "       rebasefork only supports the optional -f flag"
+      echo -e "       for resetting to match upstream\n"
+      exit
+      ;;
+  esac
+done
 
 mkdir -p $TMPDIR
 cd $TMPDIR
@@ -26,8 +48,17 @@ git remote add upstream git@github.com:cockroachdb/docs.git
 BEFORE=`git rev-list --left-right --count origin | awk '{print $2}'`
 
 git fetch upstream
-git rebase upstream/master
-git push origin master
+
+# Proceed depending on user-supplied flag:
+if [ ! $FORCE ]; then
+   git rebase upstream/master
+   git push origin master
+else
+   git reset --hard upstream/master
+   git push origin master --force
+fi
+
+exit;
 
 # New commit count after:
 AFTER=`git rev-list --left-right --count origin | awk '{print $2}'`
