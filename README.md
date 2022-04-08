@@ -10,6 +10,12 @@ that directory.
 
 _Usage:_ `workflow DOC-1234-fix-typo-in-example` from anywhere on your machine.
 
+## genrns
+Same as `workflow` but for release notes: wraps the amazing `release-notes.py` script from ED-TOOLS to auto-generate 
+release notes without user input. When working on a release notes ticket, use `genrns` _instead_ of `workflow`.
+
+_Usage:_ `genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12` from anywhere on your machine.
+
 ## stage
 Stages the repo for viewing in a webbrowser.
 
