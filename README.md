@@ -41,8 +41,8 @@ prepared for you by `workflow`
 
 **NOTE**: Not yet implemented
 
-# Supporting Tools
-Contains a collection of small support scripts.
+# Supporting Workflow Tools
+Contains a collection of small support scripts for use alongside the above Core Workflow Tools.
 
 ## rebasefork
 Updates your forked copy of docs with the latest from upstream. `workflow` automatically fetches the latest state of 
@@ -53,6 +53,11 @@ discards any fork-specific commits!
 ## cleanspace
 Clean up any staging builds from all local git repos in `$WORKSPACE`.
 
+# Other Automation
+Contains ad-hoc or otherwise tangential support scripts not related to git, but for use in a docs-as-code workflow
+
+## prom
+Manage a locally-installed Prometheus instance with ease
 
 
 # Example workflow usage, using these tools:
