@@ -9,7 +9,7 @@
 #################
 
 # Your user home directory, used as basis for other file paths:
-USR="/Users/myuser"
+USR="/Users/andf"
 
 # Prometheus-specific configuration options:
 PROMBIN="$USR/bin/prometheus"
@@ -33,6 +33,7 @@ if [ -z $PARAMETER ]; then
    echo -e "     - restart: restart the local prometheus service"
    echo -e "     - status: check the status of the local prometheus service"
    echo -e "     - web: launch the running prometheus web interface"
+   echo -e "     - conf: read/edit the prometheus conf file"
    echo -e "     - log: read the current prometheus log"
    echo -e "       Exiting ...\n"
    exit;
@@ -43,6 +44,7 @@ elif [ ! -z $2 ]; then
    echo -e "     - restart: restart the local prometheus service"
    echo -e "     - status: check the status of the local prometheus service"
    echo -e "     - web: launch the running prometheus web interface"
+   echo -e "     - conf: read/edit the prometheus conf file"
    echo -e "     - log: read the current prometheus log"
    echo -e "       Exiting ...\n"
    exit;
@@ -56,6 +58,8 @@ elif [[ "$PARAMETER" =~ ^(status|STATUS|Status|check|CHECK|Check)$ ]]; then
    STATUS=1
 elif [[ "$PARAMETER" =~ ^(web|WEB|Web)$ ]]; then
    WEB=1
+elif [[ "$PARAMETER" =~ ^(conf|CONF|Conf)$ ]]; then
+   CONF=1
 elif [[ "$PARAMETER" =~ ^(log|LOG|Log)$ ]]; then
    LOG=1
 else
@@ -65,6 +69,7 @@ else
    echo -e "     - restart: restart the local prometheus service"
    echo -e "     - status: check the status of the local prometheus service"
    echo -e "     - web: launch the running prometheus web interface"
+   echo -e "     - conf: read/edit the prometheus conf file"
    echo -e "     - log: read the current prometheus log"
    echo -e "       Exiting ...\n"
    exit;
@@ -116,6 +121,9 @@ elif [ $STATUS ]; then
    fi
 elif [ $WEB ]; then
    open http://$PROMWEB
+elif [ $CONF ]; then
+   nano $PROMCONF
+   echo ""
 elif [ $LOG ]; then
    tail -100 $PROMLOG
    echo ""
