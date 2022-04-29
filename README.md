@@ -53,13 +53,6 @@ discards any fork-specific commits!
 ## cleanspace
 Clean up any staging builds from all local git repos in `$WORKSPACE`.
 
-# Other Automation
-Contains ad-hoc or otherwise tangential support scripts not related to git, but for use in a docs-as-code workflow
-
-## prom
-Manage a locally-installed Prometheus instance with ease
-
-
 # Example workflow usage, using these tools:
 
 **Note**: Several components not yet implemented
