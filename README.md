@@ -10,6 +10,13 @@ that directory.
 
 _Usage:_ `workflow DOC-1234-fix-typo-in-example` from anywhere on your machine.
 
+## push
+Collects all your changes together under a commit, and creates a new - or updates an existing - PR. Pass the `-f` flag to
+force push an empty commit to trigger a site rebuild. Ideally ran from the VS Code terminal in the workspace
+prepared for you by `workflow`
+
+_Usage:_ `push` from within the git repo you wish to push
+
 ## genrns
 Same as `workflow` but for release notes: wraps the amazing `release-notes.py` script from ED-TOOLS to auto-generate 
 release notes without user input. When working on a release notes ticket, use `genrns` _instead_ of `workflow`.
@@ -28,15 +35,6 @@ Commits your changes to git, and submits for code review using the MDB internal 
 uses the new CR ID. If a subsequent round, re-uses the existing one. Requires locally storing the CR ID for now.
 
 _Usage:_ `review` from within the git repo you wish to submit. Ideally ran from the VS Code terminal in the workspace 
-prepared for you by `workflow`
-
-**NOTE**: Not yet implemented
-
-## push
-Once LGTM has been obtained, submits the code as-is to Git Hub, and provides links to the next three web-based steps (PR 
-in GitHub, Close JIRA, close CR). Also supports force-pushing with the `-f` flag.
-
-_Usage:_ `push` from within the git repo you wish to publish. Ideally ran from the VS Code terminal in the workspace
 prepared for you by `workflow`
 
 **NOTE**: Not yet implemented
