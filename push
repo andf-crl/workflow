@@ -1,6 +1,22 @@
 #!/bin/bash
 
-## Temporary ad-hoc git push script
+## Bash script to automate the gathering of changes in a git repo together
+## into a commit, and pushing that commit up to the repo, creating a PR.
+## This script:
+##
+##   - Adds non-ignored changes to current git staging with: git add .
+##   - Commits these changes with:
+##      - If this is our first commit, prompt for a new commit message
+##      - If this is not our first commit: commit --amend --no-edit
+##   - Pushes this commit up to the repo, and presents the PR link to you.
+##
+## IMPORTANT: This script currently only supports amending commits. If you need
+## to create discrete commits each time you push to a PR, this script is not
+## for you.
+##
+## NOTE: This script is able to perform some basic logic around fork vs upstream
+## repo, and master vs main primary branch, but nothing fancy. Ideally, this is
+## run on a fork.
 
 ############################################################
 ## YOUR VALUES ##
