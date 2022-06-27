@@ -1,6 +1,5 @@
 # Core Workflow Tools
-Contains a series of Bash wrappers to automate using a git-based docstools workflow (like at CRL). For best results, 
-place in `$PATH`!
+Automate your git-based docs-as-code workflow (like at CRL). For best results, place in `$PATH`!
 
 Comprised of the following tools:
 
@@ -10,6 +9,12 @@ that directory.
 
 _Usage:_ `workflow DOC-1234-fix-typo-in-example` from anywhere on your machine.
 
+## genrns
+Same as `workflow` but for release notes: wraps the amazing `release-notes.py` script from ED-TOOLS to auto-generate 
+release notes without user input. When working on a release notes ticket, use `genrns` _instead_ of `workflow`.
+
+_Usage:_ `genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12` from anywhere on your machine.
+
 ## push
 Collects all your changes together under a commit, and creates a new - or updates an existing - PR. Pass the `-f` flag to
 force push an empty commit to trigger a site rebuild. Ideally ran from the VS Code terminal in the workspace
@@ -17,29 +22,16 @@ prepared for you by `workflow`
 
 _Usage:_ `push` from within the git repo you wish to push
 
-## genrns
-Same as `workflow` but for release notes: wraps the amazing `release-notes.py` script from ED-TOOLS to auto-generate 
-release notes without user input. When working on a release notes ticket, use `genrns` _instead_ of `workflow`.
-
-_Usage:_ `genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12` from anywhere on your machine.
-
-## stage
-Stages the repo for viewing in a webbrowser.
-
-_Usage:_ `stage` from within the git repo you wish to stage.
-
-**NOTE**: Not yet implemented
-
-## review
-Commits your changes to git, and submits for code review using the MDB internal Rietveld tool. If the first round of CR, 
-uses the new CR ID. If a subsequent round, re-uses the existing one. Requires locally storing the CR ID for now.
-
-_Usage:_ `review` from within the git repo you wish to submit. Ideally ran from the VS Code terminal in the workspace 
-prepared for you by `workflow`
-
-**NOTE**: Not yet implemented
-
 # Supporting Workflow Tools
+A selection of tools to assist with writing docs-as-code
+
+## search_upstream
+Search for a provided search term across all upstream generated content we currently reference as include files. Supports using the `-e` flag to
+exclude a comma-separated list of directories or regexes matching directories; filenames or globs matching filenames are ignored.
+
+_Usage:_ `search_upstream -e "archived/*,v1.0/*,v1.1/*,v2.0/*,v2.1/*,v19.1/*,v19.2/*,v20.1/*,v20.2/*,v21.1/*,v21.2/*,_includes/releases/*,releases/*" crdb-v1` from within your `docs` directory.
+
+# Maintenance Workflow Tools
 Contains a collection of small support scripts for use alongside the above Core Workflow Tools.
 
 ## rebasefork
@@ -53,23 +45,14 @@ Clean up any staging builds from all local git repos in `$WORKSPACE`.
 
 # Example workflow usage, using these tools:
 
-**Note**: Several components not yet implemented
-
 1. `workflow DOC-1234-fix-typo-in-example`
 
 2. In resulting VSCode window, edit appropriate Markdown files to address concerns raised in Jira ticket.
 
-3. `stage` within VSCode terminal to preview changes via local Makefile staging
+3. `push` when you are ready to commit & push your changes for review. Supply a commit message for your first commit, when prompted. In this workflow, all subsequent pushes are applied as `commit --amend`.
 
-4. Repeat steps 2 and 3 until ready for review
+4. Proceed through the usual review process, in Reviewable or GH directly. If changes are proposed, repeat steps 2 and 3 as needed.
 
-5. `review` from within the VSCode terminal to submit to Reviewable when ready for feedback
-
-6. One of:
-
-   - CR is returned with LGTM: `push` from within VSCode terminal to create PR and open the resulting GH page
-
-   - CR comes back with feedback. Repeat steps 2-5 (edit - `stage` - `review`)
+5. Once LGTM, squash & merge
 
 Occassionally, run `rebasefork` and `cleanspace`.
-
