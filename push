@@ -33,7 +33,7 @@ GITHUB_ORG="cockroachdb"
 FORCE_EMPTY_PUSH=0
 
 ## Check for arguments passed to this script:
-while getopts ":fm:" opt; do
+while getopts ":f" opt; do
   case ${opt} in
     f )
       FORCE_EMPTY_PUSH=1
