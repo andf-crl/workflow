@@ -63,9 +63,6 @@ git clone git@github.com:$GITUSER/docs.git
 cd docs
 git remote add upstream git@github.com:cockroachdb/docs.git
 
-#sed -i '' 's%remote = origin%remote = upstream%g' .git/config
-#
-
 git pull upstream master
 git checkout -b $BRANCHNAME upstream/master
 git pull --rebase
