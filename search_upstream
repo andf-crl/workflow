@@ -1,0 +1,120 @@
+#!/bin/bash
+
+## Find remote_include references in the docs corpus and follow
+## them upstream to search their contents. Must be run from within a
+## downstream docs branch. Matches against the following directive:
+##
+## {% remote_include https://raw.githubusercontent.com/cockroachdb/cockroach ... %}
+##
+## Optionally, supply an exclusion string to exclude searching
+## specific directories. Supports the same regex glob style
+## as VS Code.
+##
+## For example, the following is a basic exclude string from VS Code:
+## archived/*,v1.0/*,v1.1/*,v2.0/*,v2.1/*,v19.1/*,v19.2/*,v20.1/*,v20.2/*,v21.1/*,v21.2/*,_includes/releases/*,releases/*
+##
+## Currently, this script does not support excluding by filename globs:
+## you may only specify directories to the -e flag (as show above).
+##
+## This script uses grep -i, for case insensitivy.
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+EXCLUDE_STRING=""
+PARAMETER=""
+SEARCHED_FILES=""
+MATCHED_FILES=""
+
+
+## Check for arguments passed to this script:
+while getopts ":e:" opt; do
+  case ${opt} in
+    e )
+      shift
+      EXCLUDE_STRING="$OPTARG"
+      ;;
+    \? )
+      echo -e "\nERROR: Invalid option: $OPTARG" 1>&2
+      echo "       Only the -e flag is supported for providing a"
+      echo "       comma-separated list of directories (or regexes"
+      echo "       matching directories) to exclude from the search."
+      exit;
+      ;;
+    : )
+      echo -e "\nERROR: If you specify -$OPTARG, you must provide an exclusion string" 1>&2
+      ;;
+  esac
+  shift
+done
+
+## Collect search string from provided parameter:
+PARAMETER=$1
+
+# Parse user-provided parameter and determine what to do:
+if [ -z $PARAMETER ]; then
+   echo -e "\nERROR: No search string provided."
+   echo -e "       Exiting ...\n"
+   exit;
+elif [ ! -z $2 ]; then
+   echo -e "\nERROR: Too many parameters provided. You must provide only one."
+   echo -e "       Exiting ...\n"
+   exit;
+else
+   SEARCH_STRING=$PARAMETER
+fi
+
+## Exit if not in a valid git repo (we also use $GITROOT later as root of grep -r search):
+GITROOT=`git rev-parse --show-toplevel 2>&1`
+if [ `echo $GITROOT | grep -c '^fatal: not a git repository'` -gt 0 ]; then
+   echo -e "\nERROR: Not in a git repo!"
+   echo -e "       You must run this program from within the docs directory.\n"
+   exit;
+fi
+
+TMPFILE=/tmp/search_remote_includes$$.tmp
+
+## Prepare $EXCLUDE_STRING for use by grep, namely by removing *. This allows us
+## to use the same exclude glob here that we already use with VS Code, etc:
+EXCLUDE_LIST="{`echo "$EXCLUDE_STRING" | sed 's%/\*%%g'`}"
+
+## First, find all files in the corpus that:
+## 1. Contain the line:
+##    {% remote_include https://raw.githubusercontent.com/cockroachdb/cockroach ... %}
+## 2. Are not excluded via $EXCLUDE_STRING
+##
+## Apologies for eval here, couldn't get {exclude,string,syntax} working any other way:
+eval "grep -r '{% remote_include https://raw.githubusercontent.com/cockroachdb/cockroach' --exclude-dir=$EXCLUDE_LIST $GITROOT  >> $TMPFILE.grepout"
+
+# Set Bash FS to \n:
+IFS="
+"
+
+## Loop through search results as returned above, and perform intended search pattern grep:
+for LINE in `cat $TMPFILE.grepout`; do
+    FILENAME=`echo $LINE | awk -F ':' '{print $1}'`
+    UPSTREAM_INCLUDE=`echo $LINE | awk -F '{% remote_include ' '{print $2}' | sed 's/ %}//g'`
+    curl -s $UPSTREAM_INCLUDE | grep -i --color=always $SEARCH_STRING  > $TMPFILE.mostrecentsearch
+    if [ $? -lt 1 ]; then
+       echo -e "\n################################################################################################################"
+       echo -e "FOUND MATCH:"
+       echo "   DOCS copy   :  $FILENAME"
+       echo "   ENG autogen :  $UPSTREAM_INCLUDE"
+       echo -e "   Matched line(s):\n"
+       cat $TMPFILE.mostrecentsearch
+       echo -e "################################################################################################################\n"
+       ((MATCHED_FILES++))
+    fi
+    ((SEARCHED_FILES++))
+done
+
+## Report on final results:
+if [ $MATCHED_FILES ]; then
+   echo -e "\nDONE: $MATCHED_FILES matched file(s) out of $SEARCHED_FILES searched."
+else
+   echo -e "\nDONE: No matches found in $SEARCHED_FILES files searched."
+fi
+
+## Cleanup:
+rm -f $TMPFILE.*
