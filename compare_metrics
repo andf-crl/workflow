@@ -1,0 +1,70 @@
+#!/bin/bash
+
+## Takes two URLs as parameters. Identifies any metrics
+## present in the former, and checks to see if those
+## metrics are also present in the latter. Metrics
+## identified as missing are then printed to the screen
+## in sorted order.
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+MISSING_COUNT=0
+TOTAL_COUNT=0
+
+## Collect search string from provided parameter:
+UPSTREAM_URL=$1
+DOWNSTREAM_URL=$2
+
+# Parse user-provided parameters and determine what to do:
+if [ -z $UPSTREAM_URL ]; then
+   echo -e "\nERROR: Missing URLs. You must supply the following 2 URLs:"
+   echo "               UPSTREAM_URL   : URL of upstream CRDB metrics page, raw text."
+   echo "               DONWSTREM_URL  : URL of downstream DOCS metrics page, raw text."
+   echo "            For example:"
+   echo "               compare_metrics https://raw.githubusercontent.com/cockroachdb/cockroach/master/pkg/kv/kvserver/metrics.go https://raw.githubusercontent.com/cockroachdb/docs/master/_includes/v22.1/metric-names.md"
+   exit;
+elif [ -z $DOWNSTREAM_URL ]; then
+   echo -e "\nERROR: Missing URL. You must supply the following 2 URLs:"
+   echo "               UPSTREAM_URL   : URL of upstream CRDB metrics page, raw text."
+   echo "               DONWSTREM_URL  : URL of downstream DOCS metrics page, raw text."
+   echo "            For example:"
+   echo "               compare_metrics https://raw.githubusercontent.com/cockroachdb/cockroach/master/pkg/kv/kvserver/metrics.go https://raw.githubusercontent.com/cockroachdb/docs/master/_includes/v22.1/metric-names.md"
+   exit;
+elif [[ `echo $UPSTREAM_URL | egrep -c '^https://raw.githubusercontent.com/cockroachdb/cockroach/master/'` -lt 1 || `echo $DOWNSTREAM_URL | egrep -c '^https://raw.githubusercontent.com/cockroachdb/docs/master'` -lt 1 ]]; then
+   echo -e "\nERROR: Malformed URLS specified. You must supply the following 2 URLs:"
+   echo "               UPSTREAM_URL   : URL of upstream CRDB metrics page, raw text."
+   echo "               DONWSTREM_URL  : URL of downstream DOCS metrics page, raw text."
+   echo "            For example:"
+   echo "               compare_metrics https://raw.githubusercontent.com/cockroachdb/cockroach/master/pkg/kv/kvserver/metrics.go https://raw.githubusercontent.com/cockroachdb/docs/master/_includes/v22.1/metric-names.md"
+   exit;
+fi
+
+TMPSPACE=/tmp/check_metrics$$
+
+mkdir -p $TMPSPACE
+
+IFS="
+"
+
+curl -s $DOWNSTREAM_URL -o $TMPSPACE.docs
+
+for METRIC in `curl -s $UPSTREAM_URL | \
+    egrep -o 'Name:.*' | grep -v 'fmt.Sprintf' | \
+    sed 's%^Name:[ \t]*"%%g' | sed 's%",%%g'`; do
+       if [ `grep -c "$METRIC" $TMPSPACE.docs` -lt 1 ]; then
+          echo $METRIC >> $TMPSPACE.results
+          MISSING_COUNT="$((MISSING_COUNT+1))"
+       fi
+       TOTAL_COUNT="$((TOTAL_COUNT+1))"
+done
+
+if [[ $MISSING_COUNT -gt 0 ]]; then
+   cat $TMPSPACE.results | sort
+   echo -e "\nRESULTS: Found $MISSING_COUNT / $TOTAL_COUNT missing metrics.\n"
+else
+   echo -e "\nRESULTS: No missing metrics out of $TOTAL_COUNT checked. Nice!\n"
+fi
+
+rm -rf $TMPSPACE
