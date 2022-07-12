@@ -65,6 +65,11 @@ else
    DBCONSOLE_URL=`spinup -v $VERSION start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'`
 fi
 
+
+## Give the cluster a few seconds to be ready to serve HTTP endpoints.
+## Without this, the HTTP endpoint sometimes 404s:
+sleep 5
+
 ## Append chartcatalog HTTP endpoint path to returned DB Console landing URL:
 CHARTCATALOG_URL="$DBCONSOLE_URL/_admin/v1/chartcatalog"
 
@@ -75,8 +80,8 @@ curl -s $CHARTCATALOG_URL | sed 's%\.\\n\\n%\. %g' | sed 's%\\n\\n%\. %g' | sed 
 ## There are two nested depths for metrics definitions in the JSON tree
 ## so we must ingest our 'name' and 'help' keys from both. Here 'help'
 ## is our descriptions field:
-cat $TMPSPACE.chartcatalog | jq -r '.catalog[] | .subsections[] | .charts[] | .metrics[] | "\(.name), \(.help)"' > $TMPSPACE.parsedcatalog
-cat $TMPSPACE.chartcatalog | jq -r '.catalog[] | .subsections[] | .subsections[] | .charts[] | .metrics[] | "\(.name), \(.help)"' >> $TMPSPACE.parsedcatalog
+cat $TMPSPACE.chartcatalog | jq -r '.catalog[] | .subsections[] | .charts[] | .metrics[] | "\(.name)|\(.help)"' > $TMPSPACE.parsedcatalog
+cat $TMPSPACE.chartcatalog | jq -r '.catalog[] | .subsections[] | .subsections[] | .charts[] | .metrics[] | "\(.name)|\(.help)"' >> $TMPSPACE.parsedcatalog
 
 # Bash field separator set to newline:
 IFS="
@@ -84,10 +89,11 @@ IFS="
 
 ## Recurse through each returned metric and check to see if it is
 ## already in our metric-names.md file. If not, add it to the running
-## list and tally up"
+## list and tally up:
 for LINE in `cat $TMPSPACE.parsedcatalog`; do
-    METRIC_NAME=`echo $LINE | awk -F ',' '{print $1}'`
-    METRIC_HELP=`echo $LINE | sed -n "/$METRIC_NAME, /s/$METRIC_NAME, //p"`
+    METRIC_NAME=`echo $LINE | awk -F '|' '{print $1}'`
+#    METRIC_HELP=`echo $LINE | sed -n "/$METRIC_NAME, /s/$METRIC_NAME, //p"`
+METRIC_HELP=`echo $LINE | awk -F '|' '{print $2}'`
     if [[ `grep -c "$METRIC_NAME" _includes/v$VERSION/metric-names.md` -lt 1 ]]; then
        echo "\`$METRIC_NAME\` | $METRIC_HELP" >> $TMPSPACE.missed_metrics
        MISSING_COUNT="$((MISSING_COUNT+1))"
@@ -99,7 +105,7 @@ done
 ## in sorted fashion, and report our success:
 if [[ $MISSING_COUNT -gt 0 ]]; then
 
-   ## First, copy exiting metrics from `metric-names.md` omitting the header:
+   ## First, copy exiting metrics from metric-names.md omitting the header:
    cat _includes/v$VERSION/metric-names.md | tail -n +3 > $TMPSPACE.new_unsorted
 
    ## Second, add missed metrics and sort based on first column:
