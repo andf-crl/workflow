@@ -1,0 +1,127 @@
+#!/bin/bash
+
+## This script spins up a local CRDB cluster using my `spinup` program,
+## accesses its http://localhost:8080/_admin/v1/chartcatalog endpoint,
+## and extracts all metrics and their descriptions. It then compares
+## this list against the list in `metric-names.md`, and merges missing
+## metrics in with their descriptions.
+##
+## Requirements:
+##
+## - cockroach : somewhere in $PATH, see note in `spinup`:
+## - spinup    : https://github.com/andf-crl/tools/blob/main/spinup
+## - jq        : brew install jq
+
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+TMPSPACE=/tmp/update_metrics$$
+
+VERSION="22.1"
+
+## Check for arguments passed to this script:
+while getopts ":v:" opt; do
+  case ${opt} in
+    v)
+      VERSION=`echo $OPTARG | sed 's%^v%%g'`
+      ;;
+    \? )
+      echo -e "\nERROR: Invalid option: $OPTARG. The following are the supported flags:" 1>&2
+      echo -e "        -v: which version of CRDB to update\n"
+      exit;
+      ;;
+    : )
+      echo -e "\nERROR: If you specify -$OPTARG, you must provide a value." 1>&2
+      ;;
+  esac
+done
+
+## Exit if not in a valid git repo:
+GITROOT=`git rev-parse --show-toplevel 2>&1`
+if [ `echo $GITROOT | grep -c '^fatal: not a git repository'` -gt 0 ]; then
+   echo -e "\nERROR: Not in a git repo!"
+   echo -e "       You must run this program from within the git branch that you wish to update.\n"
+   exit;
+fi
+
+## Sanity check on $VERSION:
+if [[ `echo $VERSION | egrep -c '^[0-9]{1,2}\.[1-2]$'` -ne 1 ]]; then
+   echo -e "\nERROR: Malformed version. Include a major version like 21.2 or 21.1."
+   echo -e "       Exiting ...\n"
+   exit;
+fi
+
+## Use `spinup` to build a quick local cluster based on the requested version
+## See script comments in `spinup` for guidance on configuring your local
+## CRDB versions to support this.
+if [ "$VERSION" = "22.1" ]; then
+   DBCONSOLE_URL=`spinup start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'` 
+elif [ "$VERSION" = "21.1" ]; then
+   echo "Unfortunately, v21.1 cannot be supported presently."
+   exit;
+else
+   DBCONSOLE_URL=`spinup -v $VERSION start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'`
+fi
+
+## Append chartcatalog HTTP endpoint path to returned DB Console landing URL:
+CHARTCATALOG_URL="$DBCONSOLE_URL/_admin/v1/chartcatalog"
+
+## Get full nested JSON tree from CHARTCATALOG_RUL and remove / replace all found
+## newline characters with their appropriate space or space+period combinations:
+curl -s $CHARTCATALOG_URL | sed 's%\.\\n\\n%\. %g' | sed 's%\\n\\n%\. %g' | sed 's%\.\\n%\. %g' | sed 's%\\n% %g' > $TMPSPACE.chartcatalog
+
+## There are two nested depths for metrics definitions in the JSON tree
+## so we must ingest our 'name' and 'help' keys from both. Here 'help'
+## is our descriptions field:
+cat $TMPSPACE.chartcatalog | jq -r '.catalog[] | .subsections[] | .charts[] | .metrics[] | "\(.name), \(.help)"' > $TMPSPACE.parsedcatalog
+cat $TMPSPACE.chartcatalog | jq -r '.catalog[] | .subsections[] | .subsections[] | .charts[] | .metrics[] | "\(.name), \(.help)"' >> $TMPSPACE.parsedcatalog
+
+# Bash field separator set to newline:
+IFS="
+"
+
+## Recurse through each returned metric and check to see if it is
+## already in our metric-names.md file. If not, add it to the running
+## list and tally up"
+for LINE in `cat $TMPSPACE.parsedcatalog`; do
+    METRIC_NAME=`echo $LINE | awk -F ',' '{print $1}'`
+    METRIC_HELP=`echo $LINE | sed -n "/$METRIC_NAME, /s/$METRIC_NAME, //p"`
+    if [[ `grep -c "$METRIC_NAME" _includes/v$VERSION/metric-names.md` -lt 1 ]]; then
+       echo "\`$METRIC_NAME\` | $METRIC_HELP" >> $TMPSPACE.missed_metrics
+       MISSING_COUNT="$((MISSING_COUNT+1))"
+    fi
+    TOTAL_COUNT="$((TOTAL_COUNT+1))"
+done
+
+## If missing metrics were detected, merge them into metric-names.md
+## in sorted fashion, and report our success:
+if [[ $MISSING_COUNT -gt 0 ]]; then
+
+   ## First, copy exiting metrics from `metric-names.md` omitting the header:
+   cat _includes/v$VERSION/metric-names.md | tail -n +3 > $TMPSPACE.new_unsorted
+
+   ## Second, add missed metrics and sort based on first column:
+   cat $TMPSPACE.missed_metrics >> $TMPSPACE.new_unsorted
+   cat $TMPSPACE.new_unsorted | sort -t\| -k1 > $TMPSPACE.new_sorted
+
+   ## Third, add header to blank file, then copy in merged, sorted metrics list:
+   echo "Name | Help" > $TMPSPACE.new_assembled
+   echo "-----|-----" >> $TMPSPACE.new_assembled
+   cat $TMPSPACE.new_sorted >> $TMPSPACE.new_assembled
+
+   ## Lastly, replace existing metric-names.md file with merged, sorted list:
+   mv $TMPSPACE.new_assembled _includes/v$VERSION/metric-names.md
+
+   ## Report results:
+   echo -e "\nRESULTS: Found $MISSING_COUNT missing metrics out of $TOTAL_COUNT checked."
+   echo -e "         Added missing metrics to:  _includes/v$VERSION/metric-names.md\n"
+else
+   echo -e "\nRESULTS: No missing metrics out of $TOTAL_COUNT checked. Nice!\n"
+fi
+
+## Clean up:
+rm -rf $TMPSPACE
+
+exit;
