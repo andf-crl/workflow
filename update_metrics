@@ -57,11 +57,16 @@ fi
 ## See script comments in `spinup` for guidance on configuring your local
 ## CRDB versions to support this.
 if [ "$VERSION" = "22.1" ]; then
+   echo "Spinning up a $VERSION cluster to get the latest chartcatalog output"
+   ## Both: starts a cluster, and gets its DB Console web URL:
    DBCONSOLE_URL=`spinup start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'` 
 elif [ "$VERSION" = "21.1" ]; then
-   echo "Unfortunately, v21.1 cannot be supported presently."
+   echo "Unfortunately, v21.1 cannot be supported presently"
+   echo "as the v21.1 version does not offer chartcatalog output."
    exit;
 else
+   echo "Spinning up a $VERSION cluster to get the latest chartcatalog output"
+   ## Both: starts a cluster, and gets its DB Console web URL:
    DBCONSOLE_URL=`spinup -v $VERSION start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'`
 fi
 
@@ -90,11 +95,18 @@ IFS="
 ## Recurse through each returned metric and check to see if it is
 ## already in our metric-names.md file. If not, add it to the running
 ## list and tally up:
+echo "Comparing metrics found to metrics listed in metric-names.md"
 for LINE in `cat $TMPSPACE.parsedcatalog`; do
     METRIC_NAME=`echo $LINE | awk -F '|' '{print $1}'`
-#    METRIC_HELP=`echo $LINE | sed -n "/$METRIC_NAME, /s/$METRIC_NAME, //p"`
-METRIC_HELP=`echo $LINE | awk -F '|' '{print $2}'`
-    if [[ `grep -c "$METRIC_NAME" _includes/v$VERSION/metric-names.md` -lt 1 ]]; then
+    METRIC_HELP=`echo $LINE | awk -F '|' '{print $2}'`
+    ## If the following conditions are true:
+    ## - Metric is missing from metric-names.md, and
+    ## - Metric does not end in '.internal', and
+    ## - Metric does not begin with 'distsender.rpc.err.'
+    ## Then, write it to a missed_metrics file:
+    if [[ `grep -c "$METRIC_NAME" _includes/v$VERSION/metric-names.md` -lt 1 && \
+          `echo "$METRIC_NAME" | egrep -c ".internal$"` -lt 1 && \
+          `echo "$METRIC_NAME" | egrep -c "^distsender.rpc.err."` -lt 1 ]]; then
        echo "\`$METRIC_NAME\` | $METRIC_HELP" >> $TMPSPACE.missed_metrics
        MISSING_COUNT="$((MISSING_COUNT+1))"
     fi
@@ -107,13 +119,14 @@ if [[ $MISSING_COUNT -gt 0 ]]; then
 
    ## First, copy exiting metrics from metric-names.md omitting the header:
    cat _includes/v$VERSION/metric-names.md | tail -n +3 > $TMPSPACE.new_unsorted
+   echo "" >> $TMPSPACE.new_unsorted
 
    ## Second, add missed metrics and sort based on first column:
    cat $TMPSPACE.missed_metrics >> $TMPSPACE.new_unsorted
    cat $TMPSPACE.new_unsorted | sort -t\| -k1 > $TMPSPACE.new_sorted
 
    ## Third, add header to blank file, then copy in merged, sorted metrics list:
-   echo "Name | Help" > $TMPSPACE.new_assembled
+   echo "Name | Description" > $TMPSPACE.new_assembled
    echo "-----|-----" >> $TMPSPACE.new_assembled
    cat $TMPSPACE.new_sorted >> $TMPSPACE.new_assembled
 
