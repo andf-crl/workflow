@@ -36,6 +36,11 @@ Compare `chartcatalog` output of a live `cockroach` instance against our `metric
 
 _Usage:_ `update_metrics` or `update_metrics -v 21.2` from within the git branch whose `metric-names.md` file you wish to update.
 
+## build_settings
+Build `cluster-settings.md` page directly from `cockroach gen settings-list --format=rawhtml` output, then inject anchor link targets, then sort by alpha. 
+
+_Usage:_ `build_settings` from within the git branch whose `cluster-settings.md` file you wish to update.
+
 # Maintenance Workflow Tools
 Contains a collection of small support scripts for use alongside the above Core Workflow Tools.
 
