@@ -1,0 +1,91 @@
+#!/bin/bash
+
+## Dead simple script to serve as POC to test whether we want to:
+##    1. Add anchor link targets for each setting in auto-gen listings
+##    2. Update all mentions of settings to now link to new anchor targets
+##
+## Research:
+##    - Generated content lives here: cockroachdb/cockroach/docs/generated
+##    - Bazel finds: cockroachdb/cockroach/docs/generated/bazel_targets.txt
+##    - And builds:
+##      - docs/generated/settings
+##      - docs/generated/settings:settings_for_tenants
+##    - The build itself is (almost) as simple as:
+##      - settings: `cockroach gen settings-list --format=rawhtml`
+##      - settings:settings_for_tenants: `cockroach gen settings-list --without-system-only`
+##    - Actual upstream code that handles this for us seems to be here:
+##      https://github.com/cockroachdb/cockroach/blob/7191d8119c4f75b9008e7c8943b46e99468eb9be/pkg/cli/clisqlexec/format_table.go#L471-L520
+##    - We could get upstream to edit it, or we could just tweak the output it gives us ourselves.
+##      This script explores the latter option, to show the need to formally pursue the former.
+##
+## Process:
+##    1. Get results from live cockroach instance
+##    2. Inject our anchor links
+##    3. Replace our include directive with our tweaked content
+##    4. Update all mentions of matching settings with links to new anchor targets (not done yet)
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+TMPSPACE=/tmp/build_settings$$.tmp
+
+## TODO: add support for `cockroach-21.2` etc:
+if [[ ! `which cockroach` ]]; then
+   echo "ERROR: No cockroach binary found in \$PATH."
+   echo "       This script needs to have \`cockroach\` available locally"
+   echo "       and findable in your \$PATH."
+   exit;
+fi
+
+## Exit if not in a valid git repo:
+GITROOT=`git rev-parse --show-toplevel 2>&1`
+if [ `echo $GITROOT | grep -c '^fatal: not a git repository'` -gt 0 ]; then
+   echo -e "\nERROR: Not in a git repo!"
+   echo -e "       You must run this program from within the git branch you wish to edit.\n"
+   exit;
+fi
+
+## Get current settings list directly from cockroach, pruning off table header and footer,
+## which we will add back later. Please forgive my sed | sed syntax, as our macOS workstations
+## don't include gnu head for -n -2 syntax, so this is our ugly-but-portable alternative:
+echo "Now getting settings-list from your local cockroach instance ..."
+cockroach gen settings-list --format=rawhtml | tail -n +4  | sed '$d' | sed '$d' >> $TMPSPACE.rawhtml
+
+touch $TMPSPACE.now_with_anchors
+
+IFS="
+"
+
+## Inject anchor links into settings rows:
+for LINE in `cat $TMPSPACE.rawhtml`; do
+   ## We seem to do   <a name=""></a>name   rather than   <a name="">name</a>
+   ## elsewhere in the docs for table element anchor links; keeping format here same:
+   SETTING_NAME=`echo $LINE | sed 's%^<tr><td><code>%%g' | sed 's%</code></td><td>.*$%%g'`
+   SETTING_ANCHOR=`echo $SETTING_NAME | sed 's%\.%-%g'`
+   SETTING_NAME_W_ANCHOR=`echo "<a name=\"setting-$SETTING_ANCHOR\"></a>$SETTING_NAME"`
+   echo $LINE | sed "s%$SETTING_NAME%$SETTING_NAME_W_ANCHOR%g" >> $TMPSPACE.now_with_anchors
+done
+
+## Build replacement settings table, with table header and footer:
+echo -e "<table>\n<thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>\n<tbody>" >> $TMPSPACE.tweaked
+cat $TMPSPACE.now_with_anchors >> $TMPSPACE.tweaked
+echo -e "</tbody>\n</table>" >> $TMPSPACE.tweaked
+
+## This is the line we're replacing:
+## {% remote_include https://raw.githubusercontent.com/cockroachdb/cockroach/release-{{ page.version.version | replace: "v", "" }}/docs/generated/settings/settings.html %}
+## This is a properly-escaped, conservative regex matching the above:
+REGEX="\{\% remote_include https://raw.githubusercontent.com/cockroachdb/cockroach.*/docs/generated/settings/settings.html \%\}"
+
+## TODO: Update this once we add versioning support to this script
+## i.e. to be able to update the v21.2 settings file:
+CLUSTER_SETTINGS_FILE="$GITROOT/v22.1/cluster-settings.md"
+
+## Amazingly, sed can replace a single line with the contents from a file. TIL:
+REGEX="^{% remote_include.*settings.html %}$"
+sed -e "/$REGEX/r $TMPSPACE.tweaked" -e "/$REGEX/d" $CLUSTER_SETTINGS_FILE > $TMPSPACE.staged_settings
+mv $TMPSPACE.staged_settings $CLUSTER_SETTINGS_FILE
+
+rm -rf $TMPSPACE
+
+exit;
