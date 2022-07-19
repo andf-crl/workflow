@@ -31,11 +31,10 @@ exclude a comma-separated list of directories or regexes matching directories; f
 
 _Usage:_ `search_upstream -e "archived/*,v1.0/*,v1.1/*,v2.0/*,v2.1/*,v19.1/*,v19.2/*,v20.1/*,v20.2/*,v21.1/*,v21.2/*,_includes/releases/*,releases/*" crdb-v1` from within your `docs` directory.
 
-## compare_metrics
-Compare metrics from two raw.githubusercontent.com URLs, returning any metrics found in the former that are missing in the latter.
-Only tested against the metrics URLs below for now.
+## update_metrics
+Compare `chartcatalog` output of a live `cockroach` instance against our `metric-names.md` file, merging in any metrics found missing. Uses [`spinup`](https://github.com/andf-crl/tools/blob/main/spinup) to automate launching the `cockroach` instance. Pass the `-v` flag to specify a non-stable version. Unfortunately, `cockroach v21.1` and earlier do not support `chartcatalog`, so this tool cannot be used with those versions.
 
-_Usage:_ `compare_metrics https://raw.githubusercontent.com/cockroachdb/cockroach/master/pkg/kv/kvserver/metrics.go https://raw.githubusercontent.com/cockroachdb/docs/master/_includes/v22.1/metric-names.md` from anywhere on your machine.
+_Usage:_ `update_metrics` or `update_metrics -v 21.2` from within the git branch whose `metric-names.md` file you wish to update.
 
 # Maintenance Workflow Tools
 Contains a collection of small support scripts for use alongside the above Core Workflow Tools.
