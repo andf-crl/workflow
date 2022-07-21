@@ -7,7 +7,10 @@
 ##       - Links are added in the following format:
 ##         - `admission.epoch_lifo.enabled` becomes <a name="setting-admission-epoch_lifo-enabled"></a>admission.epoch_lifo.enabled
 ##         - `version` becomes <a name="setting-version"></a>version
-##    2. Compares generated list against current include file
+##    2. For settings descriptions only, fixes non-rendering characters:
+##       - Removes all backticks (actually this is applies to the entire line, but only encountered in desc)
+##       - Replaces any instances of `<` or `>` with HTML representations `&lt` and `&gt`
+##    3. Compares generated list against current include file
 ##       - If differences, replaces current with generated.
 ##         - If -q is NOT set to this script, additionally report diff
 ##       - If identical, takes no action
@@ -86,9 +89,12 @@ elif [[ ! -z $VERSION && ! `which cockroach-$VERSION` ]]; then
    echo "       (or similar other version) to be findable in your \$PATH."
    exit;
 elif [[ ! -z $VERSION && $VERSION != `cockroach --version | grep 'Build Tag:' | egrep -o '[0-9]{1,2}\.[0-9]'` ]]; then
+   ## Please see NOTE ON VERSION in spinup, as mentioned in intro comments to this script:
    COCKROACH="cockroach-$VERSION"
 else
+   ## Use your system's `cockroach`, as found via $PATH
    COCKROACH="cockroach"
+   ## Determine value for $STABLE from local docs repo:
    STABLE=`grep 'stable:' _config_cockroachdb.yml | awk -F ': ' '{print $2}' | sed 's%^v%%g'`
 fi
 
@@ -102,9 +108,10 @@ fi
 
 ## Get current settings list directly from cockroach, pruning off table header and footer,
 ## which we will add back later. Please forgive my sed | sed syntax, as our macOS workstations
-## don't include gnu head for -n -2 syntax, so this is our ugly-but-portable alternative:
-if [ ! $QUIET ]; then
-   echo "Now getting settings-list from your local cockroach instance ..."
+## don't include gnu head for -n -2 syntax, so this is our ugly-but-portable alternative
+## (i.e. should work on our workstations && on a theoretical ubuntu build host):
+if [[ $QUIET -eq 0  ]]; then
+   echo "Getting settings-list from your local cockroach instance ..."
 fi
 $COCKROACH gen settings-list --format=rawhtml | tail -n +4  | sed '$d' | sed '$d' >> $TMPSPACE.rawhtml
 
@@ -113,6 +120,10 @@ touch $TMPSPACE.now_with_anchors
 IFS="
 "
 
+if [[ $QUIET -eq 0  ]]; then
+   echo "Building new cluster settings listing and comparing to current ..."
+fi
+
 ## Inject anchor links into settings rows:
 for LINE in `cat $TMPSPACE.rawhtml`; do
    ## We seem to do   <a name=""></a>name   rather than   <a name="">name</a>
@@ -120,7 +131,8 @@ for LINE in `cat $TMPSPACE.rawhtml`; do
    SETTING_NAME=`echo $LINE | sed 's%^<tr><td><code>%%g' | sed 's%</code></td><td>.*$%%g'`
    SETTING_ANCHOR=`echo $SETTING_NAME | sed 's%\.%-%g'`
    SETTING_NAME_W_ANCHOR=`echo "<a name=\"setting-$SETTING_ANCHOR\"></a>$SETTING_NAME"`
-   echo $LINE | sed "s%<code>$SETTING_NAME</code>%<code>$SETTING_NAME_W_ANCHOR</code>%g" >> $TMPSPACE.now_with_anchors
+   ## NOTE: we are also stripping backticks here, as they do not render in the resulting HTML table:
+   echo $LINE | sed "s%<code>$SETTING_NAME</code>%<code>$SETTING_NAME_W_ANCHOR</code>%g" | sed 's%\`%%g' >> $TMPSPACE.now_with_anchors
 done
 
 ## Build replacement settings table, with table header and footer:
@@ -129,10 +141,27 @@ echo "{% comment %}" >> $TMPSPACE.tweaked
 echo "NOTE: This is auto-generated content populated directly from the cockroach binary. Do not edit manually!" >> $TMPSPACE.tweaked
 echo "      Last auto-generated `date` | See DOC-5103 for details" >> $TMPSPACE.tweaked
 echo -e "{% endcomment %}\n" >> $TMPSPACE.tweaked
+
 ## Then wrap in table element, and copy in anchor-ified settings list:
 echo -e "<table>\n<thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>\n<tbody>" >> $TMPSPACE.tweaked
 cat $TMPSPACE.now_with_anchors >> $TMPSPACE.tweaked
 echo -e "</tbody>\n</table>" >> $TMPSPACE.tweaked
+
+## Loop through our generated replacement, fixing descriptions that use either
+## the `<` or `>` character to use '&lt' and '&gt' instead, so that they render
+## properly. Carefully limit replacement only to setting descriptions:
+for LINE in `cat $TMPSPACE.tweaked`; do
+   if [ `echo $LINE | egrep -c '^<tr><td><code><a name=".*"></a>.*</code></td><td>.*</td><td><code>.*</code></td><td>.*[<>].*</td></tr>$'` -gt 0 ]; then
+      FIRST_PART=`echo $LINE | grep -o '^<tr><td><code><a name=".*"></a>.*</code></td><td>.*</td><td><code>.*</code></td><td>'`
+      SECOND_PART=`echo $LINE | sed -n -e "s%^$FIRST_PART%%p" | sed 's%</td></tr>$%%g'`
+      FIXED_SECOND_PART=`echo $SECOND_PART | sed 's%\<%\&lt%g' | sed 's%\>%\&gt%g'`
+      LAST_PART="</td></tr>"
+      FIXED_WHOLE_LINE="$FIRST_PART$FIXED_SECOND_PART$LAST_PART"
+      echo $FIXED_WHOLE_LINE >> $TMPSPACE.tweaked2
+   else
+      echo $LINE >> $TMPSPACE.tweaked2
+   fi
+done
 
 ## Use $STABLE unless $VERSION was passed:
 if [[ -z $VERSION ]]; then
@@ -143,29 +172,29 @@ fi
 
 ## Compare our generated table to the current state of
 ## $CLUSTER_SETTINGS_FILE, omitting timestamp comment portion:
-diff -w <( tail -n +6  $TMPSPACE.tweaked ) <( tail -n +6 $CLUSTER_SETTINGS_FILE ) > $TMPSPACE.differences
+diff -w <( tail -n +6  $TMPSPACE.tweaked2 ) <( tail -n +6 $CLUSTER_SETTINGS_FILE ) > $TMPSPACE.differences
 
 ## If differences are detected, update $CLUSTER_SETTINGS_FILE and print
 ## diff to user. Else report no action:
 if [[ -z $VERSION && ! -s $TMPSPACE.differences ]]; then
-   if [ ! $QUIET ]; then
-      echo "Nothing to do: cluster-settings-table.md is already up to date for v$STABLE."
+   if [[ $QUIET -eq 0  ]]; then
+      echo "DONE: Nothing to do: cluster-settings-table.md is already up to date for v$STABLE."
    fi
 elif [[ ! -z $VERSION && ! -s $TMPSPACE.differences ]]; then
-   if [ ! $QUIET ]; then
-      echo "Nothing to do: cluster-settings-table.md is already up to date for v$VERSION."
+   if [[ $QUIET -eq 0  ]]; then
+      echo "DONE: Nothing to do: cluster-settings-table.md is already up to date for v$VERSION."
    fi
 elif [[ -z $VERSION && -s $TMPSPACE.differences ]]; then
-   cp $TMPSPACE.tweaked $CLUSTER_SETTINGS_FILE
-   if [ ! $QUIET ]; then
-      echo "Successfully updated _includes/v$STABLE/reference/cluster-settings-table.md"
+   cp $TMPSPACE.tweaked2 $CLUSTER_SETTINGS_FILE
+   if [[ $QUIET -eq 0  ]]; then
+      echo "DONE: Successfully updated _includes/v$STABLE/reference/cluster-settings-table.md"
       echo -e "The following changes were performed:\n"
       cat $TMPSPACE.differences
    fi
 elif [[ ! -z $VERSION && -s $TMPSPACE.differences ]]; then
-   cp $TMPSPACE.tweaked $CLUSTER_SETTINGS_FILE
-   if [ ! $QUIET ]; then
-      echo "Successfully updated _includes/v$VERSION/reference/cluster-settings-table.md"
+   cp $TMPSPACE.tweaked2 $CLUSTER_SETTINGS_FILE
+   if [[ $QUIET -eq 0  ]]; then
+      echo "DONE: Successfully updated _includes/v$VERSION/reference/cluster-settings-table.md"
       echo -e "The following changes were performed:\n"
       cat $TMPSPACE.differences
    fi
