@@ -1,9 +1,24 @@
 #!/bin/bash
 
-## Dead simple script to serve as POC to test whether we want to:
-##    1. Add anchor link targets for each setting in auto-gen listings
-##    2. Update all mentions of settings to now link to new anchor targets
+## Runs `cockroach` locally on your system to get the very latest cluster settings via:
+##    cockroach gen settings-list --format=rawhtml
+## Then performs the following:
+##    1. Adds anchor link targets to all cluster settings
+##       - Links are added in the following format:
+##         - `admission.epoch_lifo.enabled` becomes <a name="setting-admission-epoch_lifo-enabled"></a>admission.epoch_lifo.enabled
+##         - `version` becomes <a name="setting-version"></a>version
+##    2. Compares generated list against current include file
+##       - If differences, replaces current with generated.
+##         - If -q is NOT set to this script, additionally report diff
+##       - If identical, takes no action
 ##
+## Optionally supports a -v flag to specify a specific cluster settings version.
+## Supports the same local symlinking scheme for versioned `cockroach`
+## that my `spinup` program does. See NOTE ON VERSION there:
+## https://github.com/andf-crl/tools/blob/main/spinup
+##
+## To run in quiet mode, with no output, use -q
+
 ## Research:
 ##    - Generated content lives here: cockroachdb/cockroach/docs/generated
 ##    - Bazel finds: cockroachdb/cockroach/docs/generated/bazel_targets.txt
@@ -16,13 +31,11 @@
 ##    - Actual upstream code that handles this for us seems to be here:
 ##      https://github.com/cockroachdb/cockroach/blob/7191d8119c4f75b9008e7c8943b46e99468eb9be/pkg/cli/clisqlexec/format_table.go#L471-L520
 ##    - We could get upstream to edit it, or we could just tweak the output it gives us ourselves.
-##      This script explores the latter option, to show the need to formally pursue the former.
+##      This script explores the latter option.
 ##
-## Process:
-##    1. Get results from live cockroach instance
-##    2. Inject our anchor links
-##    3. Replace our include directive with our tweaked content
-##    4. Update all mentions of matching settings with links to new anchor targets (not done yet)
+## TODO:
+## 1. Consider alternate build target for tenants found here:
+##    settings:settings_for_tenants: `cockroach gen settings-list --without-system-only
 
 ############################################################
 ## BEGIN SCRIPT ##
@@ -30,12 +43,53 @@
 
 TMPSPACE=/tmp/build_settings$$.tmp
 
-## TODO: add support for `cockroach-21.2` etc:
-if [[ ! `which cockroach` ]]; then
-   echo "ERROR: No cockroach binary found in \$PATH."
-   echo "       This script needs to have \`cockroach\` available locally"
-   echo "       and findable in your \$PATH."
+VERSION=""
+STABLE=""
+QUIET=0
+
+## Check for arguments passed to this script:
+while getopts ":v:q" opt; do
+  case ${opt} in
+    v)
+      VERSION=`echo $OPTARG | sed 's%^v%%g'`
+      ;;
+    q)
+      QUIET=1
+      ;;
+    \? )
+      echo -e "\nERROR: Invalid option: $OPTARG. The following are the supported flags:" 1>&2
+      echo "        -v: Specific version of cockroach to use. Expects a \`cockroach-21.2\` or"
+      echo "               similar in path if so."
+      echo "        -q: Quiet mode: no output"
+      exit;
+      ;;
+    : )
+      echo -e "\nERROR: If you specify -$OPTARG, you must provide a value." 1>&2
+      ;;
+  esac
+done
+
+## Sanity check on version selection:
+if [[ ! -z $VERSION && `echo $VERSION | egrep -c '^[0-9]{1,2}\.[0-9]$'` -lt 1 ]]; then
+   echo "ERROR: Malformed version specified to -v"
+   echo "       It must be something like \`21.2\` or \`21.1\`."
+   echo "       Leave off the -v flag to use your environment's /`cockroach/`."
    exit;
+elif [[ -z $VERSION && ! `which cockroach` ]]; then
+   echo "ERROR: No matching cockroach binary found in \$PATH."
+   echo "       This script expects either \`cockroach\` or \`cockroach-21.2\`"
+   echo "       (or similar other version) to be findable in your \$PATH."
+   exit;
+elif [[ ! -z $VERSION && ! `which cockroach-$VERSION` ]]; then
+   echo "ERROR: No matching cockroach binary found in \$PATH for requested version $VERSION."
+   echo "       This script expects either \`cockroach\` or \`cockroach-21.2\`"
+   echo "       (or similar other version) to be findable in your \$PATH."
+   exit;
+elif [[ ! -z $VERSION && $VERSION != `cockroach --version | grep 'Build Tag:' | egrep -o '[0-9]{1,2}\.[0-9]'` ]]; then
+   COCKROACH="cockroach-$VERSION"
+else
+   COCKROACH="cockroach"
+   STABLE=`grep 'stable:' _config_cockroachdb.yml | awk -F ': ' '{print $2}' | sed 's%^v%%g'`
 fi
 
 ## Exit if not in a valid git repo:
@@ -49,8 +103,10 @@ fi
 ## Get current settings list directly from cockroach, pruning off table header and footer,
 ## which we will add back later. Please forgive my sed | sed syntax, as our macOS workstations
 ## don't include gnu head for -n -2 syntax, so this is our ugly-but-portable alternative:
-echo "Now getting settings-list from your local cockroach instance ..."
-cockroach gen settings-list --format=rawhtml | tail -n +4  | sed '$d' | sed '$d' >> $TMPSPACE.rawhtml
+if [ ! $QUIET ]; then
+   echo "Now getting settings-list from your local cockroach instance ..."
+fi
+$COCKROACH gen settings-list --format=rawhtml | tail -n +4  | sed '$d' | sed '$d' >> $TMPSPACE.rawhtml
 
 touch $TMPSPACE.now_with_anchors
 
@@ -64,28 +120,58 @@ for LINE in `cat $TMPSPACE.rawhtml`; do
    SETTING_NAME=`echo $LINE | sed 's%^<tr><td><code>%%g' | sed 's%</code></td><td>.*$%%g'`
    SETTING_ANCHOR=`echo $SETTING_NAME | sed 's%\.%-%g'`
    SETTING_NAME_W_ANCHOR=`echo "<a name=\"setting-$SETTING_ANCHOR\"></a>$SETTING_NAME"`
-   echo $LINE | sed "s%$SETTING_NAME%$SETTING_NAME_W_ANCHOR%g" >> $TMPSPACE.now_with_anchors
+   echo $LINE | sed "s%<code>$SETTING_NAME</code>%<code>$SETTING_NAME_W_ANCHOR</code>%g" >> $TMPSPACE.now_with_anchors
 done
 
 ## Build replacement settings table, with table header and footer:
+## Start with comment to team: autogen, don't edit manually, see ticket:
+echo "{% comment %}" >> $TMPSPACE.tweaked
+echo "NOTE: This is auto-generated content populated directly from the cockroach binary. Do not edit manually!" >> $TMPSPACE.tweaked
+echo "      Last auto-generated `date` | See DOC-5103 for details" >> $TMPSPACE.tweaked
+echo -e "{% endcomment %}\n" >> $TMPSPACE.tweaked
+## Then wrap in table element, and copy in anchor-ified settings list:
 echo -e "<table>\n<thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>\n<tbody>" >> $TMPSPACE.tweaked
 cat $TMPSPACE.now_with_anchors >> $TMPSPACE.tweaked
 echo -e "</tbody>\n</table>" >> $TMPSPACE.tweaked
 
-## This is the line we're replacing:
-## {% remote_include https://raw.githubusercontent.com/cockroachdb/cockroach/release-{{ page.version.version | replace: "v", "" }}/docs/generated/settings/settings.html %}
-## This is a properly-escaped, conservative regex matching the above:
-REGEX="\{\% remote_include https://raw.githubusercontent.com/cockroachdb/cockroach.*/docs/generated/settings/settings.html \%\}"
+## Use $STABLE unless $VERSION was passed:
+if [[ -z $VERSION ]]; then
+   CLUSTER_SETTINGS_FILE="$GITROOT/_includes/v$STABLE/reference/cluster-settings-table.md"
+else
+   CLUSTER_SETTINGS_FILE="$GITROOT/_includes/v$VERSION/reference/cluster-settings-table.md"
+fi
 
-## TODO: Update this once we add versioning support to this script
-## i.e. to be able to update the v21.2 settings file:
-CLUSTER_SETTINGS_FILE="$GITROOT/v22.1/cluster-settings.md"
+## Compare our generated table to the current state of
+## $CLUSTER_SETTINGS_FILE, omitting timestamp comment portion:
+diff -w <( tail -n +6  $TMPSPACE.tweaked ) <( tail -n +6 $CLUSTER_SETTINGS_FILE ) > $TMPSPACE.differences
 
-## Amazingly, sed can replace a single line with the contents from a file. TIL:
-REGEX="^{% remote_include.*settings.html %}$"
-sed -e "/$REGEX/r $TMPSPACE.tweaked" -e "/$REGEX/d" $CLUSTER_SETTINGS_FILE > $TMPSPACE.staged_settings
-mv $TMPSPACE.staged_settings $CLUSTER_SETTINGS_FILE
+## If differences are detected, update $CLUSTER_SETTINGS_FILE and print
+## diff to user. Else report no action:
+if [[ -z $VERSION && ! -s $TMPSPACE.differences ]]; then
+   if [ ! $QUIET ]; then
+      echo "Nothing to do: cluster-settings-table.md is already up to date for v$STABLE."
+   fi
+elif [[ ! -z $VERSION && ! -s $TMPSPACE.differences ]]; then
+   if [ ! $QUIET ]; then
+      echo "Nothing to do: cluster-settings-table.md is already up to date for v$VERSION."
+   fi
+elif [[ -z $VERSION && -s $TMPSPACE.differences ]]; then
+   cp $TMPSPACE.tweaked $CLUSTER_SETTINGS_FILE
+   if [ ! $QUIET ]; then
+      echo "Successfully updated _includes/v$STABLE/reference/cluster-settings-table.md"
+      echo -e "The following changes were performed:\n"
+      cat $TMPSPACE.differences
+   fi
+elif [[ ! -z $VERSION && -s $TMPSPACE.differences ]]; then
+   cp $TMPSPACE.tweaked $CLUSTER_SETTINGS_FILE
+   if [ ! $QUIET ]; then
+      echo "Successfully updated _includes/v$VERSION/reference/cluster-settings-table.md"
+      echo -e "The following changes were performed:\n"
+      cat $TMPSPACE.differences
+   fi
+fi
 
+## Cleanup:
 rm -rf $TMPSPACE
 
 exit;
