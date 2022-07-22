@@ -41,6 +41,11 @@ Build `cluster-settings.md` page directly from `cockroach gen settings-list --fo
 
 _Usage:_ `build_settings` from within the git branch whose `cluster-settings.md` file you wish to update.
 
+## link_all_settings
+Consult `cluster-settings.md` page (as created by `build_settings`), and link all settings that appear in the corpus to their new anchor links. Use `-v` to specify a non-stable version.
+
+_Usage:_ `link_all_settings` from within the git branch whose cluster settings you'd like to link sitewide.
+
 # Maintenance Workflow Tools
 Contains a collection of small support scripts for use alongside the above Core Workflow Tools.
 

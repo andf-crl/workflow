@@ -1,0 +1,92 @@
+#!/bin/bash
+
+## Parses the `cluster-settings-tables.md` include as created previously
+## by build_settings, and then adds links to any  mentions found in the
+## corpus.
+
+## Process:
+## 1. Run build_settings to give the Cluster Settings table anchorlinks
+## 2. Run link_all_settings to link all settings in v22.1
+## 3. Hand-clean as appropriate (see note at end of this script)
+## 4. Repeate steps 1-3 with v21.2, and as far back as we'd like to go.
+
+## Appears to take around ~20 minutes per major version. Not bad.
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+#EXCLUDE_STRING=""
+VERSION=""
+
+## Check for arguments passed to this script:
+while getopts ":v:" opt; do
+  case ${opt} in
+    v)
+      VERSION=`echo $OPTARG | sed 's%^v%%g'`
+      ;;
+    \? )
+      echo -e "\nERROR: Invalid option: $OPTARG" 1>&2
+      echo "       Supports only:"
+      echo "       -v : Version of docs to update sitewide"
+      exit;
+      ;;
+    : )
+      echo -e "\nERROR: If you specify -$OPTARG, you must specify a value." 1>&2
+      exit
+      ;;
+  esac
+done
+
+## Sanity check on version selection:
+if [[ ! -z $VERSION && `echo $VERSION | egrep -c '^[0-9]{1,2}\.[0-9]$'` -lt 1 ]]; then
+   echo "ERROR: Malformed version specified to -v"
+   echo "       It must be something like \`21.2\` or \`21.1\`."
+   echo "       Leave off the -v flag to use your environment's /`cockroach/`."
+   exit;
+elif [[ -z $VERSION ]]; then
+   ## Determine value for $STABLE from local docs repo:
+   STABLE=`grep 'stable:' _config_cockroachdb.yml | awk -F ': ' '{print $2}' | sed 's%^v%%g'`
+   VERSION=$STABLE
+fi
+
+CLUSTER_SETTINGS_TABLE="_includes/v$VERSION/cluster-settings-table.md"
+
+## Exit if not in a valid git repo (we also use $GITROOT later as root of grep -r search):
+GITROOT=`git rev-parse --show-toplevel 2>&1`
+if [ `echo $GITROOT | grep -c '^fatal: not a git repository'` -gt 0 ]; then
+   echo -e "\nERROR: Not in a git repo!"
+   echo -e "       You must run this program from within the docs directory.\n"
+   exit;
+fi
+
+IFS="
+"
+
+## As we loop, we have to be clever:
+## - Omit file: _includes/$VERSION/cluster-settings-table.md or we clobber ourselves! (in: find)
+## - Omit file: _includes/$VERSION/metric-names.md because some metrics and settings have same names! (in: find)
+## - Omit setting: 'version' because it matches everywhere. If desired, do this one by hand. (in: for loop)
+for LINE in `cat $CLUSTER_SETTINGS_TABLE | grep '<tr><td><code><a name="' | grep -v 'setting-version'`; do
+   ## Build components for our replacement:
+   SETTING_NAME=`echo $LINE | awk -F '</a>' '{print $2}' | sed 's%</code></td><td>.*$%%g'`
+   ## This is required, so that we can match period characters explicitly::
+   ESCAPED_SETTING_NAME=`echo $SETTING_NAME | sed -e 's%\.%\\.%g'`
+   SETTING_LINK=`echo $LINE | awk -F '"' '{print $2}'`
+
+   ## Replace in 4 version-specific directories, with careful omissions within the first:
+   find $GITROOT/_includes/v$VERSION -type f -name "*.md" ! -name 'cluster-settings-table.md' ! -name 'metric-names.md' -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
+   find $GITROOT/_includes/releases/v$VERSION -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
+   find $GITROOT/v$VERSION -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
+   ## Not necessary for v20.2 and later, but here for if we go back that far with this POC:
+   find $GITROOT/releases/ -type f -name "v$VERSION.*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
+
+done
+
+## Now that we've replaced, the following must be done separately:
+## - Unlink instances of [cluster setting](cluster-settings.html) that commonly predeed or follow
+##   matches, as these are no longer useful now that we link the settings directly.
+## - Undo replacements that occurred within code blocks or sample code includes. I can't
+##   come up with a way to handle this gracefully before, so it must be done ungracefully after.
+
+exit
