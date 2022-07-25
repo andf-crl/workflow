@@ -165,9 +165,9 @@ done
 
 ## Use $STABLE unless $VERSION was passed:
 if [[ -z $VERSION ]]; then
-   CLUSTER_SETTINGS_FILE="$GITROOT/_includes/v$STABLE/reference/cluster-settings-table.md"
+   CLUSTER_SETTINGS_FILE="$GITROOT/_includes/v$STABLE/cluster-settings-table.md"
 else
-   CLUSTER_SETTINGS_FILE="$GITROOT/_includes/v$VERSION/reference/cluster-settings-table.md"
+   CLUSTER_SETTINGS_FILE="$GITROOT/_includes/v$VERSION/cluster-settings-table.md"
 fi
 
 ## Compare our generated table to the current state of
@@ -187,20 +187,20 @@ elif [[ ! -z $VERSION && ! -s $TMPSPACE.differences ]]; then
 elif [[ -z $VERSION && -s $TMPSPACE.differences ]]; then
    cp $TMPSPACE.tweaked2 $CLUSTER_SETTINGS_FILE
    if [[ $QUIET -eq 0  ]]; then
-      echo "DONE: Successfully updated _includes/v$STABLE/reference/cluster-settings-table.md"
+      echo "DONE: Successfully updated $CLUSTER_SETTINGS_FILE"
       echo -e "The following changes were performed:\n"
       cat $TMPSPACE.differences
    fi
 elif [[ ! -z $VERSION && -s $TMPSPACE.differences ]]; then
    cp $TMPSPACE.tweaked2 $CLUSTER_SETTINGS_FILE
    if [[ $QUIET -eq 0  ]]; then
-      echo "DONE: Successfully updated _includes/v$VERSION/reference/cluster-settings-table.md"
+      echo "DONE: Successfully updated $CLUSTER_SETTINGS_FILE"
       echo -e "The following changes were performed:\n"
       cat $TMPSPACE.differences
    fi
 fi
 
 ## Cleanup:
-rm -rf $TMPSPACE
+rm -rf $TMPSPACE.*
 
 exit;
