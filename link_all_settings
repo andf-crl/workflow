@@ -1,8 +1,12 @@
 #!/bin/bash
 
 ## Parses the `cluster-settings-tables.md` include as created previously
-## by build_settings, and then adds links to any  mentions found in the
-## corpus.
+## by build_settings, and then adds links to any mentions of matching
+## cluster settings found in the corpus. For example:
+
+## This can be changed via the `jobs.retention_time` setting.
+## -->
+## This can be changed via the [`jobs.retention_time`](cluster-settings.html#setting-jobs-retention_time) setting.
 
 ## Process:
 ## 1. Run build_settings to give the Cluster Settings table anchorlinks
@@ -16,7 +20,6 @@
 ## BEGIN SCRIPT ##
 ##################
 
-#EXCLUDE_STRING=""
 VERSION=""
 
 ## Check for arguments passed to this script:
@@ -70,17 +73,20 @@ IFS="
 for LINE in `cat $CLUSTER_SETTINGS_TABLE | grep '<tr><td><code><a name="' | grep -v 'setting-version'`; do
    ## Build components for our replacement:
    SETTING_NAME=`echo $LINE | awk -F '</a>' '{print $2}' | sed 's%</code></td><td>.*$%%g'`
-   ## This is required, so that we can match period characters explicitly::
-   ESCAPED_SETTING_NAME=`echo $SETTING_NAME | sed -e 's%\.%\\.%g'`
+   ## Escape periods and add pre-escaped backticks, for matching:
+   ESCAPED_SETTING_NAME=$(echo "\`$SETTING_NAME\`" | sed -e 's%\.%\\.%g')
+   ## Version of above with only pre-escaped backticks, for replacement:
+   SETTING_NAME_BACKTICKS=$(echo "\`$SETTING_NAME\`")
+   ## Anchor link target:
    SETTING_LINK=`echo $LINE | awk -F '"' '{print $2}'`
 
    ## Replace in 4 version-specific directories, with careful omissions within the first:
-   find $GITROOT/_includes/v$VERSION -type f -name "*.md" ! -name 'cluster-settings-table.md' ! -name 'metric-names.md' -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
-   find $GITROOT/_includes/releases/v$VERSION -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
-   find $GITROOT/v$VERSION -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
-   ## Not necessary for v20.2 and later, but here for if we go back that far with this POC:
-   find $GITROOT/releases/ -type f -name "v$VERSION.*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME](cluster-settings.html#$SETTING_LINK)%g" {} \;
-
+   find $GITROOT/_includes/v$VERSION -type f -name "*.md" ! -name 'cluster-settings-table.md' ! -name 'metric-names.md' -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME_BACKTICKS](cluster-settings.html#$SETTING_LINK)%g" {} \;
+   find $GITROOT/_includes/releases/v$VERSION -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME_BACKTICKS](../v$VERSION/cluster-settings.html#$SETTING_LINK)%g" {} \;
+   find $GITROOT/v$VERSION -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME_BACKTICKS](cluster-settings.html#$SETTING_LINK)%g" {} \;
+   ## This 4th one is not necessary for v20.2 and later, but is included for if
+   ## we go back further than that in this POC. No-op for v20.2 and later:
+   find $GITROOT/releases/ -type f -name "v$VERSION.*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME_BACKTICKS](../v$VERSION/cluster-settings.html#$SETTING_LINK)%g" {} \;
 done
 
 ## Now that we've replaced, the following must be done separately:
