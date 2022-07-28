@@ -8,11 +8,19 @@
 ## -->
 ## This can be changed via the [`jobs.retention_time`](cluster-settings.html#setting-jobs-retention_time) setting.
 
+## Limitations:
+## - Only touches *.md files
+## - Will false-positive replace instances in code blocks,
+##   un-replace manually.
+## - Does not attempt to touch advisories/, do manually.
+
 ## Process:
 ## 1. Run build_settings to give the Cluster Settings table anchorlinks
-## 2. Run link_all_settings to link all settings in v22.1
+## 2. Run link_all_settings to link all settings in v$STABLE/, which also
+##    updates cockroachcloud/ and _includes/cockroachcloud/
 ## 3. Hand-clean as appropriate (see note at end of this script)
-## 4. Repeate steps 1-3 with v21.2, and as far back as we'd like to go.
+## 4. Repeate steps 1-3 with explicit past version, like v21.2, as far
+##    back as we'd like to go.
 
 ## Appears to take around ~20 minutes per major version. Not bad.
 
@@ -87,6 +95,12 @@ for LINE in `cat $CLUSTER_SETTINGS_TABLE | grep '<tr><td><code><a name="' | grep
    ## This 4th one is not necessary for v20.2 and later, but is included for if
    ## we go back further than that in this POC. No-op for v20.2 and later:
    find $GITROOT/releases/ -type f -name "v$VERSION.*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME_BACKTICKS](../v$VERSION/cluster-settings.html#$SETTING_LINK)%g" {} \;
+   ## If we are linking the current $STABLE version, also update cockroachcloud/
+   ## and _includes/cockroachcloud/:
+   if [[ $VERSION == $STABLE ]]; then
+      find $GITROOT/cockroachcloud/ -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME_BACKTICKS](../{{site.versions[\"stable\"]}}/cluster-settings.html#$SETTING_LINK)%g" {} \;
+      find $GITROOT/_includes/cockroachcloud/ -type f -name "*.md" -exec sed -i '' -e "s%$ESCAPED_SETTING_NAME%[$SETTING_NAME_BACKTICKS](../{{site.versions[\"stable\"]}}/cluster-settings.html#$SETTING_LINK)%g" {} \;
+   fi
 done
 
 ## Now that we've replaced, the following must be done separately:
