@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## Parses the `cluster-settings-tables.md` include as created previously
+## Parses the `cluster-settings-table.md` include as created previously
 ## by build_settings, and then adds links to any mentions of matching
 ## cluster settings found in the corpus. For example:
 
@@ -104,7 +104,7 @@ for LINE in `cat $CLUSTER_SETTINGS_TABLE | grep '<tr><td><code><a name="' | grep
 done
 
 ## Now that we've replaced, the following must be done separately:
-## - Unlink instances of [cluster setting](cluster-settings.html) that commonly predeed or follow
+## - Unlink instances of [cluster setting](cluster-settings.html) that commonly precede or follow
 ##   matches, as these are no longer useful now that we link the settings directly.
 ## - Undo replacements that occurred within code blocks or sample code includes. I can't
 ##   come up with a way to handle this gracefully before, so it must be done ungracefully after.
