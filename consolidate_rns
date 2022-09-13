@@ -1,0 +1,93 @@
+#!/bin/bash
+
+## This is a script
+
+############################################################
+## YOUR VALUES ##
+#################
+
+## Bash array of versions to consolidate (beta will be treated
+## the same as v1.0 later in script, but needs to be here to
+## be found in releases/):
+RNS_TO_MERGE=(beta v1.0 v1.1 v2.0 v2.1 v19.1 v19.2 v20.1)
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+TMPSPACE=/tmp/consolidate_rns_$$
+
+## Exit if not in a valid git repo:
+GITROOT=`git rev-parse --show-toplevel 2>&1`
+if [ `echo $GITROOT | grep -c '^fatal: not a git repository'` -gt 0 ]; then
+   echo -e "\nERROR: Not in a git repo!"
+   echo -e "       You must run this program from within the docs directory.\n"
+   exit;
+fi
+
+## Make temp _includes/releases/beta dir to house beta-*.md release notes
+## temporarily until we later move them:
+mkdir -p _includes/releases/beta
+
+IFS="
+"
+
+## Loop over versions to consolidate:
+for RN in "${RNS_TO_MERGE[@]}"; do
+
+    echo "Now processing $RN ..."
+
+    ## Loop over release notes files beginning with $RN:
+    for RN_PATH in `ls releases/$RN*.md | grep -v $RN.md`; do
+        RN_FILENAME=`echo $RN_PATH | awk -F '/' '{print $2}'`
+        RN_VERSION=`echo $RN_FILENAME | sed 's%.md%%g'`
+
+        ## Copy matching filename to new include location:
+        mv $RN_PATH _includes/releases/$RN/
+
+        ## Perform needed adjustments to each copied file, by editing in place
+        ## in TMPDIR, writing to numbered stage files in case troubleshooting
+        ## is needed:
+
+        ## 1. Remove all YAML front matter (and leading blank newlines):
+        sed '1{/^---$/!q;};1,/^---$/d' _includes/releases/$RN/$RN_FILENAME | sed '/./,$!d' > $TMPSPACE.1
+
+        ## 2. Remove date header line (and leading blank newlines):
+        sed -E 's/^## [a-zA-Z]{3,9} [0-9]{1,2}, [0-9]{4}$//g' $TMPSPACE.1 | sed '/./,$!d' > $TMPSPACE.2
+
+        ## 3. Insert $DATE_VERS_LIQUID as first line:
+        sed '1 i\
+<h2 id="{{ include.release | slugify }}">{{ include.release }}</h2>\
+\
+Release Date: {{ include.release_date | date: "%B %-d, %Y" }}\
+
+' $TMPSPACE.2 > $TMPSPACE.3
+
+        ## 4. Remove marketing email signup (and leading blank newlines):
+        sed '/^Get future release notes emailed to you:$/,/^{% include marketo.html %}$/d' $TMPSPACE.3  | sed '/./,$!d' > $TMPSPACE.4
+
+        ## 5. Convert all MD headers into HTML headers with specific tweaks:
+        cat $TMPSPACE.4 | while read LINE; do
+            if [ `echo $LINE | egrep -c '^#{2,3}'` -gt 0 ]; then
+                TITLE=`echo $LINE | sed 's%^#* %%g'`
+                TITLE_SLUG=`echo $TITLE | iconv -t ascii//TRANSLIT | sed -E s/[^a-zA-Z0-9]+/-/g | sed -E s/^-+\|-+$//g | tr A-Z a-z`
+                echo "<h3 id=\"$RN_VERSION-$TITLE_SLUG\">$TITLE</h3>" >> $TMPSPACE.5
+            else
+                echo $LINE >> $TMPSPACE.5
+            fi
+        done
+
+        ## 6. Remove any double-newlines (some are created when removing marketing email bit, for example):
+        sed 'N;/^\n$/D;P;D;' $TMPSPACE.5 > $TMPSPACE.6
+
+        ## 7. Move refactored RN to new location:
+        mv $TMPSPACE.6 _includes/releases/$RN/$RN_FILENAME
+
+    done
+done
+
+## Move beta MD files into v1.0 dir and remove beta dir:
+mv _includes/releases/beta/*.md _includes/releases/v1.0/
+rmdir _includes/releases/beta
+
+exit;
