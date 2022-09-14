@@ -19,6 +19,7 @@ RNS_TO_MERGE=(beta v1.0 v1.1 v2.0 v2.1 v19.1 v19.2 v20.1)
 
 ## Tempspace to stage in-progress changes before copying completed files:
 TMPSPACE=/tmp/consolidate_rns_$$
+mkdir -p $TMPSPACE
 
 ## Exit if not in a valid git repo:
 GITROOT=`git rev-parse --show-toplevel 2>&1`
@@ -32,7 +33,7 @@ fi
 ## temporarily until we later move them:
 mkdir -p _includes/releases/beta
 
-# Bash field separator:
+## Bash field separator (teaches the for loop to treat newlines as the FS):
 IFS="
 "
 
@@ -41,10 +42,14 @@ for RN in "${RNS_TO_MERGE[@]}"; do
 
     echo "Now processing $RN ..."
 
-    ## Loop over release notes files beginning with $RN:
+    ## Loop over release notes files beginning with $RN, but being careful
+    ## to skip the files that are exactly $RN.md, as these are the parent
+    ## files that will be including all our new include files:
     for RN_PATH in `ls releases/$RN*.md | grep -v $RN.md`; do
         RN_FILENAME=`echo $RN_PATH | awk -F '/' '{print $2}'`
         RN_VERSION=`echo $RN_FILENAME | sed 's%.md%%g'`
+
+        mkdir -p $TMPSPACE/$RN_VERSION
 
         ## Copy matching filename to new include location:
         mv $RN_PATH _includes/releases/$RN/
@@ -58,7 +63,7 @@ for RN in "${RNS_TO_MERGE[@]}"; do
         ##    This sed invocation fires only on '---' detected at line 1, and deletes
         ##    all lines up to and including the next-detected '---' line. The second
         ##    sed just strips any leading blank newlines.
-        sed '1{/^---$/!q;};1,/^---$/d' _includes/releases/$RN/$RN_FILENAME | sed '/./,$!d' > $TMPSPACE.1
+        sed '1{/^---$/!q;};1,/^---$/d' _includes/releases/$RN/$RN_FILENAME | sed '/./,$!d' > $TMPSPACE/$RN_VERSION/staging.1
 
         ## 2. Remove date header line (and leading blank newlines):
         ##    This sed invocation deletes headers that contain a specific, expected
@@ -66,7 +71,7 @@ for RN in "${RNS_TO_MERGE[@]}"; do
         ##    we must use a range for the letter matching of abbr length (3) through
         ##    longest month length (sept: 9). The second sed just strips any leading
         ##    blank newlines. 
-        sed -E 's/^## [a-zA-Z]{3,9} [0-9]{1,2}, [0-9]{4}$//g' $TMPSPACE.1 | sed '/./,$!d' > $TMPSPACE.2
+        sed -E 's/^## [a-zA-Z]{3,9} [0-9]{1,2}, [0-9]{4}$//g' $TMPSPACE/$RN_VERSION/staging.1 | sed '/./,$!d' > $TMPSPACE/$RN_VERSION/staging.2
 
         ## 3. Insert $DATE_VERS_LIQUID as first line:
         ##    This inserts (i\) specific desired liquid syntax as line one (the leading 1).
@@ -78,17 +83,17 @@ for RN in "${RNS_TO_MERGE[@]}"; do
 \
 Release Date: {{ include.release_date | date: "%B %-d, %Y" }}\
 
-' $TMPSPACE.2 > $TMPSPACE.3
+' $TMPSPACE/$RN_VERSION/staging.2 > $TMPSPACE/$RN_VERSION/staging.3
 
         ## 4. Remove marketing email signup (and leading blank newlines):
         ##    Similar to step 1, we remove all lines between and including the specified text
         ##    strings. The second sed just strips any leading blank newlines.
-        sed '/^Get future release notes emailed to you:$/,/^{% include marketo.html %}$/d' $TMPSPACE.3  | sed '/./,$!d' > $TMPSPACE.4
+        sed '/^Get future release notes emailed to you:$/,/^{% include marketo.html %}$/d' $TMPSPACE/$RN_VERSION/staging.3  | sed '/./,$!d' > $TMPSPACE/$RN_VERSION/staging.4
 
         ## 5. Convert all MD headers into HTML headers with specific tweaks:
-        ##    We must do this in a while read loop because a for loop, with IFS=newline cannot
-        ##    handle blank lines with any granularity.
-        cat $TMPSPACE.4 | while read LINE; do
+        ##    We must do this in a while read loop because a for loop, with IFS=newline, cannot handle
+        ##    blank lines with any granularity (i.e. it skips them completely in writing the output).
+        cat $TMPSPACE/$RN_VERSION/staging.4 | while read LINE; do
             ## If the line we stumble on is a header ...
             if [ `echo $LINE | egrep -c '^#{2,3}'` -gt 0 ]; then
                 ## ... Determine the header title (by stripping the leading ##s, some are 2 some are 3):
@@ -97,18 +102,18 @@ Release Date: {{ include.release_date | date: "%B %-d, %Y" }}\
                 ##     https://gist.github.com/oneohthree/f528c7ae1e701ad990e6
                 TITLE_SLUG=`echo $TITLE | iconv -t ascii//TRANSLIT | sed -E s/[^a-zA-Z0-9]+/-/g | sed -E s/^-+\|-+$//g | tr A-Z a-z`
                 ## ... Then write the adjusted header to the staging file instead:
-                echo "<h3 id=\"$RN_VERSION-$TITLE_SLUG\">$TITLE</h3>" >> $TMPSPACE.5
+                echo "<h3 id=\"$RN_VERSION-$TITLE_SLUG\">$TITLE</h3>" >> $TMPSPACE/$RN_VERSION/staging.5
             ## If the line we stumble in is not a header, just print it as is to the staging file:
             else
-                echo $LINE >> $TMPSPACE.5
+                echo $LINE >> $TMPSPACE/$RN_VERSION/staging.5
             fi
         done
 
         ## 6. Remove any double-newlines (some are created when removing marketing email bit, for example):
-        sed 'N;/^\n$/D;P;D;' $TMPSPACE.5 > $TMPSPACE.6
+        sed '/^$/N;/^\n$/D' $TMPSPACE/$RN_VERSION/staging.5 > $TMPSPACE/$RN_VERSION/staging.6
 
         ## 7. Move refactored RN to new location:
-        mv $TMPSPACE.6 _includes/releases/$RN/$RN_FILENAME
+        cp $TMPSPACE/$RN_VERSION/staging.6 _includes/releases/$RN/$RN_FILENAME
 
     done
 done
@@ -119,6 +124,6 @@ rmdir _includes/releases/beta
 
 ## Comment this out if you wanna go through the staging files for each step to follow along
 ## after running this script!
-rm -rf $TMPSPACE.*
+rm -rf $TMPSPACE
 
 exit;
