@@ -11,7 +11,7 @@
 #################
 
 ## Your github username:
-GITUSER=your_git_user
+GITUSER=andf-crl
 
 ############################################################
 ## BEGIN SCRIPT ##
@@ -57,8 +57,6 @@ else
    git reset --hard upstream/master
    git push origin master --force
 fi
-
-exit;
 
 # New commit count after:
 AFTER=`git rev-list --left-right --count origin | awk '{print $2}'`
