@@ -10,8 +10,14 @@ that directory.
 _Usage:_ `workflow DOC-1234-fix-typo-in-example` from anywhere on your machine.
 
 ## genrns
+Generates release notes, with a focus on ease of use and automation of as many tasks as possible.
+
+_Usage:_ `genrns v21.1.18 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12` from within your local `docs` git repo directory.
+
+## genrns-legacy
 Same as `workflow` but for release notes: wraps the amazing `release-notes.py` script from ED-TOOLS to auto-generate 
-release notes without user input. When working on a release notes ticket, use `genrns` _instead_ of `workflow`.
+release notes without user input. When working on a release notes ticket, use `genrns` _instead_ of `workflow`. `genrns-legacy` is the
+original version of `genrns` before it was converted to be appropirate for team use.
 
 _Usage:_ `genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12` from anywhere on your machine.
 
