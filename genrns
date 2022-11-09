@@ -44,7 +44,7 @@
 ## After the script completes, and has generated your release notes,
 ## how would you like to be presented with the results? Options are:
 ##    0 : Do nothing, just exit. You'll browse to the generated .md file yourself.
-##    1 : Open the release notes .md file with your system's default text editor, using the
+##    1 : Open the release notes .md file with your system's default markdown editor, using the
 ##           `open` system command. Be warned: by default, this opens XCode on macOS.
 ##    2 : Open the branch as a new workspace in VS Code, setting everything up for you. Note
 ##           that you must have installed the `code` command line tool for this to work. See:
