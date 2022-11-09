@@ -1,154 +1,197 @@
 #!/bin/bash
 
-## A bash wrapper around the amazing release-notes.py script,
-## which compresses all prep work into a single-line invocation,
-## with all necessary components passed as arguments as follows:
+## genrns - bash wrapper around release_notes.py
 ##
-##    genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12
+## USAGE:
+## - Place genrns in your $PATH
+## - Run genrns from within your docs repo
+## - Provide the 3 required parameters
+## - Parameters can be supplied in any order
 ##
-## Where:
+## PARAMETERS:
+## - Release Version (required) - the version of CRDB to generate the release notes
+##      for. Supports all types of releases, incl. alpha, beta, rc, and GA
+## - Release SHA (required) - the full 40-digit SHA for the target release version.
+##      Find it here: https://groups.google.com/a/cockroachlabs.com/g/releases
+##      Format: [A-Za-z]{40}
+## - Release Date (required) - the release date for the target release version,
+##      Find it here: https://groups.google.com/a/cockroachlabs.com/g/releases
+##      Format: YYYY-MM-DD
+## - Jira Ticket (optional) - supply the DOCS Jira ticket number for the release notes
+##      if you want to preface your branchname with the ticket number (ANDF workflow).
+##      Format: DOCS-[0-9]{1,9}
 ##
-##   - The first parameter contains:
-##      - JIRA ticket, in this case DOC-3239
-##      - CRDB version number of the release notes, in this case v21.1.18
-##      - Some message describing the commit to complete the branch name, in this case 'release-notes'
-##   - The second parameter must be: the SHA hash of the commit to be used as GA.
-##      - Find that here: https://groups.google.com/a/cockroachlabs.com/g/releases
-##   - The third parameter must be: the release date of this version, in ISO date format
-##      - Find that here: https://groups.google.com/a/cockroachlabs.com/g/releases
+## EXAMPLE:
+##   genrns v21.1.18 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12
 ##
-## genrns handles the following without user input:
-##   - Cloning all three needed repos: cockroach, docs, and ed-tools
-##   - Ensuring we have the latest versions of each
-##   - Adjusting cockroach's .git/config to pull PR refs
-##   - Computing deltas since last release
-##   - Passing everything needed to release-notes.py and running it
-##   - Cleaning up (deleting cloned cockroach and ed-tools repos)
+## WHAT THIS WRAPPER DOES:
+## - Performs a slew of sanity checks on provided parameters and current git env
+##      to try to sidestep as many of the usual stumbling blocks as possible
+## - Clones CRDB and ed-tools repos for you, and ensures they are up to date
+## - Configures CRDB repo for PR ref comparison (required by release-notes.py)
+## - Computes deltas from previous release
+## - Passes all required info to release-notes.py, and runs it
+## - Cleans up after itself
 ##
-## Run this script _instead_ of workflow when starting a RN ticket.
-## genrns offers a superset of workflow's features.
-##
-## To make use of the `code` command to open VSCode from the
-## command line, you'll need to have followed these instructions:
-##
-##   https://code.visualstudio.com/docs/editor/command-line#_launching-from-command-line
+## USER-CONFIGURABLE FINAL STEP:
+## - You can use the SHOW_RESULTS flag below to configure what you want this script
+##      to do for you as its final step. See guidance below.
 
 ############################################################
 ## YOUR VALUES ##
 #################
 
-## Your github username:
-GITUSER=your_git_user
+## After the script completes, and has generated your release notes,
+## how would you like to be presented with the results? Options are:
+##    0 : Do nothing, just exit. You'll browse to the generated .md file yourself.
+##    1 : Open the release notes .md file with your system's default text editor, using the
+##           `open` system command. Be warned: by default, this opens XCode on macOS.
+##    2 : Open the branch as a new workspace in VS Code, setting everything up for you. Note
+##           that you must have installed the `code` command line tool for this to work. See:
+##           https://code.visualstudio.com/docs/editor/command-line#_launching-from-command-line
+SHOW_RESULTS=0
 
-## Your docs workspace (i.e. where to git clone to)
-## If you use a ~ in the path, don't quote the value:
-WORKSPACE=~/Documents/docs_workspace
+## The Github organization you are a member of. It's this part of your GH repo URL:
+## https://github.com/THIS_IS_YOUR_GITHUB_ORG/docs/
+## This is only used for determining if we're in a fork or working from canonical.
+GITHUB_ORG="cockroachdb"
 
 ############################################################
 ## BEGIN SCRIPT ##
 ##################
 
+## No user-servicible parts below :)
+
 TMPSPACE=/tmp/genrns$$
+ITERATOR=1
 
-## Collect parameters:
-BRANCHNAME=$1
-RELEASE_SHA=$2
-RELEASE_DATE=$3
+## genrns must be run from within the docs repo. Exit if not the case:
+GITROOT=`git rev-parse --show-toplevel 2>&1`
+if [ `echo $GITROOT | grep -c '^fatal: not a git repository'` -gt 0 ]; then
+   echo -e "\nERROR: Not in a git repo!"
+   echo -e "       You must run this program from within the docs git repo.\n"
+   exit;
+fi
 
-## Break BRANCHNAME into subcomponents needed later
-## and perform rudimentary sanity checking:
-JIRA=`echo $BRANCHNAME | awk -F\- '{print $1"-"$2}' | egrep -o '^[A-Z]{2,9}-[0-9]{1,9}$'`
-VERSION=`echo $BRANCHNAME | sed -e "s%^$JIRA-%%g" | egrep -o \
-'(^v[0-9]{1,2}\.[1-2]\.[0-9]{1,2}-alpha\.[0-9]{1,9}|\
-^v[0-9]{1,2}\.[1-2]\.[0-9]{1,2}-beta\.[0-9]{1,9}|\
-^v[0-9]{1,2}\.[1-2]\.[0-9]{1,2}-rc\.[0-9]{1,9}|\
-^v[0-9]{1,2}\.[1-2]\.[0-9]{1,2})'`
-DESCRIPTION=`echo $BRANCHNAME | sed -e "s%^$JIRA-%%g" | sed -e "s%^$VERSION-%%g"`
-RECONSTRUCTED=`echo $JIRA-$VERSION-$DESCRIPTION`
+## Concat params together so we can more easily parse them:
+USER_PARAMETERS=`echo $1,$2,$3,$4`
 
-# Quit if needed parameters are missing or malformed:
-if [ -z $BRANCHNAME ]; then
-   echo -e "\nERROR: You must provide the intended branch name as a parameter."
-   echo -e "       Example: genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12"
-   echo -e "       Exiting ...\n"
+## Pull out the parameters we expect based on patterns that are unique to each:
+RELEASE_VERSION=`echo $USER_PARAMETERS | sed 's%^v%%g' | egrep -o \
+'(^[0-9]{1,2}\.[1-2]\.0-alpha\.[0-9]{1,9}|\
+^[0-9]{1,2}\.[1-2]\.0-beta\.[0-9]{1,9}|\
+^[0-9]{1,2}\.[1-2]\.0-rc\.[0-9]{1,9}|\
+^[0-9]{1,2}\.[1-2]\.[0-9]{1,2})'`
+RELEASE_VERSION=`echo v$RELEASE_VERSION`
+MAJOR_VERSION=`echo $RELEASE_VERSION | awk -F '.' '{print $1.$2}'`
+RELEASE_DATE=`echo $USER_PARAMETERS | egrep -o '[0-9]{4}-[0-9]{2}-[0-9]{2}'`
+RELEASE_SHA=`echo $USER_PARAMETERS | egrep -o '[A-Za-z0-9]{40}'`
+JIRA_TICKET=`echo $USER_PARAMETERS | egrep -o 'DOC-[0-9]{1,9}'`
+
+# Sanity checks on provided parameters. Quit if required parameters are missing or malformed:
+if [[ -z $1 || -z $2 || -z $3 ]]; then
+   echo -e "\nERROR: Missing parameters! We need all three of the following:"
+   echo -e "       - RELEASE VERSION: v22.1.1"
+   echo -e "       - RELEASE SHA: 53cb1ed8f2f42376ad76d4888d582c88685b2820"
+   echo -e "       - RELEASE DATE: 2022-04-12"
+   echo -e "\n       Example: genrns v21.1.18 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12"
+   echo -e "\nExiting ...\n"
    exit;
-elif [[ -z $RELEASE_SHA || -z $RELEASE_DATE ]]; then
-   echo -e "\nERROR: Insufficient parameters provided. You must provide the"
-   echo -e "       following three parameters:"
-   echo -e "          BRANCHNAME: DOC-1234-v22.1.1-release-notes"
-   echo -e "          RELEASE_SHA: 53cb1ed8f2f42376ad76d4888d582c88685b2820"
-   echo -e "          RELEASE_DATE: 2022-04-12"
-   echo -e "       \nExample: genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12"
-   echo -e "       Exiting ...\n"
-   exit;
-elif [ `echo $BRANCHNAME | grep -c ^$RECONSTRUCTED$` -ne 1 ]; then
-   echo -e "\nERROR: Your branchname appears malformed: it must include:"
-   echo -e "       JIRA TICKET + VERSION NUMBER + DESCRIPTION"
-   echo -e "       Examples: genrns DOC-1234-v22.1.1-release-notes SHA DATE"
-   echo -e "                 genrns DOC-1234-v22.1.0-alpha.1-release-notes SHA DATE"
-   echo -e "                 genrns DOC-1234-v22.1.1-rc.2-release-notes SHA DATE"
-   echo -e "       Exiting ...\n"
-   exit;
-elif [ -z $JIRA ]; then
-   echo -e "\nERROR: Your branchname doesn't appear to contain a JIRA ticket!"
-   echo -e "       It must include: JIRA TICKET + VERSION NUMBER + DESCRIPTION."
-   echo -e "       Example: genrns DOC-3239-v21.1.18-release-notes SHA DATE"
-   echo -e "       Exiting ...\n"
-   exit;
-elif [ -z $VERSION ]; then
-   echo -e "\nERROR: Your branchname doesn't appear to contain a valid VERSION!"
-   echo -e "       It must include: JIRA TICKET + VERSION NUMBER + DESCRIPTION."
-   echo -e "       Examples: genrns DOC-1234-v22.1.1-release-notes SHA DATE"
-   echo -e "                 genrns DOC-1234-v22.1.0-alpha.1-release-notes SHA DATE"
-   echo -e "                 genrns DOC-1234-v22.1.1-rc.2-release-notes SHA DATE"
-   echo -e "       Exiting ...\n"
+elif [ -z $RELEASE_VERSION ]; then
+   echo -e "\nERROR: Invalid RELEASE VERSION! We need a CRDB version, like one of:"
+   echo -e "       - v22.1.10"
+   echo -e "       - v22.1.0-alpha.1"
+   echo -e "       - v22.1.0-beta.2"
+   echo -e "       - v22.1.0-rc.3"
+   echo -e "\nExiting ...\n"
    exit;
 elif [ -z $RELEASE_SHA ]; then
-   echo -e "\nERROR: Your branchname doesn't appear to contain a RELEASE_SHA!"
-   echo -e "       Please find it here: https://groups.google.com/a/cockroachlabs.com/g/releases"
-   echo -e "       Example: genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12"
-   echo -e "       Exiting ...\n"
+   echo -e "\nERROR: Invalid RELEASE SHA! We need a live CRDB SHA:"
+   echo -e "       - Find it here: https://groups.google.com/a/cockroachlabs.com/g/releases"
+   echo -e "       - Format: [A-Za-z0-9]{40}"
+   echo -e "       - Example: 53cb1ed8f2f42376ad76d4888d582c88685b2820"
+   echo -e "\nExiting ...\n"
    exit;
-elif [[ -z $RELEASE_DATE || `echo $RELEASE_DATE | egrep -c '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'` -ne 1 ]]; then
-   echo -e "\nERROR: Your branchname doesn't appear to contain a valid RELEASE_DATE!"
-   echo -e "       Please find it here: https://groups.google.com/a/cockroachlabs.com/g/releases"
-   echo -e "       Example: genrns DOC-3239-v21.1.18-release-notes 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12"
-   echo -e "       Exiting ...\n"
+elif [ -z $RELEASE_DATE ]; then
+   echo -e "\nERROR: Invalid RELEASE DATE! We need the intended relase date:"
+   echo -e "       - Find it here: https://groups.google.com/a/cockroachlabs.com/g/releases"
+   echo -e "       - Format: YYYY-MM-DD"
+   echo -e "       - Example: 2022-04-12"
+   echo -e "\nExiting ...\n"
    exit;
-fi
-
-## Check for existing 'docs' or $BRANCHNAME dir in docs workspace, exiting if found:
-if [ -d $WORKSPACE/docs ]; then
-   echo -e "\nERROR: An existing docs dir was found here:"
-   echo -e "       $WORKSPACE/docs"
-   echo -e "       Please manually move or rename this, then rerun this program."
-   echo -e "       Exiting ...\n"
-   exit;
-elif [ -d $WORKSPACE/docs_$BRANCHNAME ]; then
-   echo -e "\nERROR: An existing docs dir was found here:"
-   echo -e "       $WORKSPACE/docs_$BRANCHNAME"
-   echo -e "       Please manually move or rename this, then rerun this program."
-   echo -e "       Exiting ...\n"
+elif [ `git status | grep -c "nothing to commit, working tree clean"` -lt 1 ]; then
+   echo -e "\nERROR: Your current docs branch `git rev-parse --abbrev-ref HEAD` has uncommitted changes!"
+   echo -e "       Please first commit them, unstage them, or delete this branch first."
+   echo -e "       Run \`git status\` to see uncomitted changes."
+   echo -e "\nExiting ...\n"
    exit;
 fi
 
+## If everything checks out, report success & parsed parameter values to the user:
+echo -e "\nAll parameters look good! Running release_notes.py with the following parameters:"
+echo -e "  RELEASE VERSION : $RELEASE_VERSION"
+echo -e "  RELEASE DATE : $RELEASE_DATE"
+echo -e "  RELEASE SHA : $RELEASE_SHA"
+if [ ! -z $JIRA_TICKET ]; then
+   echo -e "  JIRA TICKET : $JIRA_TICKET"
+fi
 
-# Clone DOCS repo, create new branch, rebase:
-cd $WORKSPACE
-echo "Now cloning docs repo ..."
-git clone git@github.com:$GITUSER/docs.git -q
-cd docs
-git remote add upstream git@github.com:cockroachdb/docs.git
-git pull upstream master -q
-git checkout -b $BRANCHNAME upstream/master
+echo ""
+
+## Determine if we are in a fork:
+GITHUB_USER_OR_ORG=`git remote get-url origin | awk -F ':' '{print $2}' | sed 's%\/docs.git$%%g'`
+if [ `echo $GITHUB_USER_OR_ORG | grep -c '^$GITHUB_ORG'` -gt 0 ]; then
+   IS_FORK=0
+else
+   IS_FORK=1
+fi
+
+## Determine if primary upstream branch is 'master' or 'main':
+MASTER_OR_MAIN=`git ls-remote --symref origin HEAD | egrep '^ref: refs/heads/.*HEAD$' | sed 's%\tHEAD%%g' | awk -F '/' '{print $3}'`
+
+if [ ! -z $JIRA_TICKET ]; then
+   BRANCHNAME=$JIRA_TICKET-$RELEASE_VERSION-release-notes
+else
+   BRANCHNAME=$RELEASE_VERSION-release-notes
+fi
+
+## Sanity check to see if we already have a branch of the intended name.
+## This could happen if this script fails after branch creation but before
+## completion, resulting in a need to re-run. Rather than mandate the user
+## clean up after the script in case of failure, we just append an iterator
+## to the branchname and roll with it.
+
+## Check for literal match of $BRANCHNAME:
+if [ `git branch | grep -c $BRANCHNAME$` -gt 0 ]; then
+
+   ## Check for literal match of $BRANCHNAME-1:
+   if [ `git branch | grep -c $BRANCHNAME-$ITERATOR$` -gt 0 ]; then
+
+      ## Loop over a check for $BRANCHNAME-$ITERATOR, breaking out of
+      ## loop at first instance of no-match:
+      while true; do
+         ((ITERATOR++))
+         if [ `git branch | grep -c $BRANCHNAME-$ITERATOR$` -lt 1 ]; then
+            break
+         fi
+      done
+   fi
+   ## Append $BRANCHNAME with whichever iteration we reached:
+   BRANCHNAME=$BRANCHNAME-$ITERATOR
+fi
+
+## Checkout the new BRANCHNAME, depending on fork or not:
+if [ $IS_FORK ]; then
+   git checkout -b $BRANCHNAME origin/$MASTER_OR_MAIN
+else
+   git checkout -b $BRANCHNAME upstream/$MASTER_OR_MAIN
+fi
+
+## Get the latest from upstream:
 git pull --rebase -q
 
-## Rename `docs` based on BRANCHNAME:
-cd ..
-mv docs docs_$BRANCHNAME
-echo "   ... done!"
-
-## Pull down the latest cockroachdb and ed-tools repos:
+## Pull down the latest cockroachdb and ed-tools repos,
+## using $TMPSPACE as temporary staging for both:
 mkdir -p $TMPSPACE
 cd $TMPSPACE
 echo "Now cloning ed-tools repo ..."
@@ -173,18 +216,25 @@ echo "   ... done!"
 ## heavy lifting:
 echo "Now running release-notes.py ..."
 python3 ../ed-tools/docs/release-notes/release-notes.py \
---docs-dir=$WORKSPACE/docs_$BRANCHNAME \
+--docs-dir=$GITROOT \
 --repo-dir=$TMPSPACE/cockroach \
---release-name=$VERSION \
+--release-name=$RELEASE_VERSION \
 --release-sha=$RELEASE_SHA \
 --release-date=$RELEASE_DATE
 echo "   ... done!"
 
-## Open new branch in VS Code:
-cd $WORKSPACE/docs_$BRANCHNAME
-code .
-
 echo "Now cleaning up ..."
 rm -rf $TMPSPACE
 echo "   ... done!"
+
+# End script depending on user selection above:
+if [ $SHOW_RESULTS == 0 ]; then
+   echo "Release Notes: $GITROOT/_includes/releases/$MAJOR_VERSION/$RELEASE_VERSION.md"
+elif [ $SHOW_RESULTS == 1 ]; then
+   open $GITROOT/_includes/releases/$MAJOR_VERSION/$RELEASE_VERSION.md
+elif [ $SHOW_RESULTS == 2 ]; then
+   code .
+fi
+
 exit;
+
