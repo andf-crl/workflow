@@ -195,10 +195,10 @@ git pull --rebase -q
 mkdir -p $TMPSPACE
 cd $TMPSPACE
 echo "Now cloning ed-tools repo ..."
-git clone git@github.com:cockroachdb/ed-tools.git -q
+git clone https://github.com/cockroachdb/ed-tools.git -q
 echo "   ... done!"
 echo "Now cloning cockroach repo ..."
-git clone git@github.com:cockroachdb/cockroach.git -q
+git clone https://github.com/cockroachdb/cockroach.git -q
 echo "   ... done!"
 
 cd cockroach
