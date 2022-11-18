@@ -194,12 +194,23 @@ git pull --rebase -q
 ## using $TMPSPACE as temporary staging for both:
 mkdir -p $TMPSPACE
 cd $TMPSPACE
-echo "Now cloning ed-tools repo ..."
-git clone https://github.com/cockroachdb/ed-tools.git -q
-echo "   ... done!"
-echo "Now cloning cockroach repo ..."
-git clone https://github.com/cockroachdb/cockroach.git -q
-echo "   ... done!"
+
+## Branch based on HTTPS or SSH clone configuration:
+if [[ -f ~/.git-credentials || -f $GITROOT/.git-credentials  ]]; then
+   echo "Now cloning ed-tools repo ..."
+   git clone https://github.com/cockroachdb/ed-tools.git -q
+   echo "   ... done!"
+   echo "Now cloning cockroach repo ..."
+   git clone https://github.com/cockroachdb/cockroach.git -q
+   echo "   ... done!"
+else
+   echo "Now cloning ed-tools repo ..."
+   git clone git@github.com:cockroachdb/ed-tools.git -q
+   echo "   ... done!"
+   echo "Now cloning cockroach repo ..."
+   git clone git@github.com:cockroachdb/cockroach.git -q
+   echo "   ... done!"
+fi
 
 cd cockroach
 
