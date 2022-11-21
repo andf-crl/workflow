@@ -17,9 +17,9 @@
 ## - Release Date (required) - the release date for the target release version,
 ##      Find it here: https://groups.google.com/a/cockroachlabs.com/g/releases
 ##      Format: YYYY-MM-DD
-## - Jira Ticket (optional) - supply the DOCS Jira ticket number for the release notes
+## - Jira Ticket (optional) - supply the DOC Jira ticket number for the release notes
 ##      if you want to preface your branchname with the ticket number (ANDF workflow).
-##      Format: DOCS-[0-9]{1,9}
+##      Format: DOC-[0-9]{1,9}
 ##
 ## EXAMPLE:
 ##   genrns v21.1.18 53cb1ed8f2f42376ad76d4888d582c88685b2820 2022-04-12
