@@ -2,24 +2,74 @@
 
 ## This script spins up a local CRDB cluster using my `spinup` program,
 ## accesses its http://localhost:8080/_admin/v1/chartcatalog endpoint,
-## and extracts all metrics and their descriptions. It then compares
-## this list against the list in `metric-names.md`, and merges missing
-## metrics in with their descriptions.
+## and extracts all metrics and their descriptions. It then updates the
+## existing metrics MD includes (for both core and serverless). Must be run
+## from within your docs repo.
 ##
 ## Requirements:
 ##
-## - cockroach : somewhere in $PATH, see note in `spinup`:
-## - spinup    : https://github.com/andf-crl/tools/blob/main/spinup
-## - jq        : brew install jq
+## - cockroach : Put: somewhere in $PATH, see note in `spinup` to support
+##                  multiple versions:
+## - spinup    : Get: https://github.com/andf-crl/tools/blob/main/spinup
+## - jq        : Run: brew install jq
+## - GH token  : Do: all steps in next section to find your GITHUB_TOKEN
+##
+## Usage (one of):
+##
+##   update_metrics
+##   update_metrics -v v23.1
+##
+## Picking your VERSION:
+##
+## - If you do not specify a version with -v, update_metrics will use the
+##      current version of versions.stable from _config_cockroachdb.yml, and
+##      expects that your `cockroach` binary is the same version!! If not, this
+##      script errors and exits.
+## - If you do specify a version with -v, update_metrics will use that, and
+##      assume that you have set up versioned `cockroach` symlinks as
+##      described in my description to `spinup`, like `cockroach-22.2` for
+##      example. If not, this script errors and exits.
+##
+## Effects of selecting a VERSION:
+##
+## - update_metrics will run the specified VERSION of CRDB. You must have set
+##      up your binary symlinks as described in the description to `spinup`.
+## - update_metrics will update the specific VERSION directory of the docs:
+##      _includes/$VERSION/metric-names.md
+##      _includes/$VERSION/metric-names-serverless.md
+##
+## IMPORTANT: This script cannot download updated `cockroach` binaries for you!
+##            YOU are responsible for making sure the version of `cockroach` that
+##            you have on your computer is the latest minor revision of the major
+##            version you are seeking to update. TLDR: go download latest `cockroach`
+##            binaries before running this!!
+##
+##              -->  https://www.cockroachlabs.com/docs/releases/index.html  <--
+##
 
+############################################################
+## YOUR VALUES ##
+#################
+
+## You must have a valid unepxired GitHub session token to the `cockroach` repo
+## in order for this script to be able to access the upstream file that defines
+## which metrics are availble in Serverless. To generate this value:
+##   1. In your browser, go to https://github.com/cockroachlabs/managed-service/blob/master/pkg/otel/assets/metrics.yaml
+##   2. Click the Raw button.
+##   3. Your URL will now contain the GitHub token for your session (valid for ~ 60 min).
+##   4. Paste just the token below as the value to GITHUB_TOKEN.
+##   5. Save this script, and re-run.
+
+GITHUB_TOKEN=GHSAT0AAAAAABV4W223QUEJCLXZJ7VNOBCGY7BP7EA
 
 ############################################################
 ## BEGIN SCRIPT ##
 ##################
 
-TMPSPACE=/tmp/update_metrics$$
+## No user-servicible parts below :)
 
-VERSION="22.1"
+TMPSPACE=/tmp/update_metrics$$
+SERVERLESS_METRICS_YAML="https://raw.githubusercontent.com/cockroachlabs/managed-service/master/pkg/otel/assets/metrics.yaml?token=$GITHUB_TOKEN"
 
 ## Check for arguments passed to this script:
 while getopts ":v:" opt; do
@@ -29,7 +79,7 @@ while getopts ":v:" opt; do
       ;;
     \? )
       echo -e "\nERROR: Invalid option: $OPTARG. The following are the supported flags:" 1>&2
-      echo -e "        -v: which version of CRDB to update\n"
+      echo -e "        -v: which version of CRDB to update metrics for\n"
       exit;
       ;;
     : )
@@ -46,30 +96,85 @@ if [ `echo $GITROOT | grep -c '^fatal: not a git repository'` -gt 0 ]; then
    exit;
 fi
 
-## Sanity check on $VERSION:
-if [[ `echo $VERSION | egrep -c '^[0-9]{1,2}\.[1-2]$'` -ne 1 ]]; then
+## Ensure we have a valid Github token for our curl later:
+GITHUB_HTTP_RESPONSE=`curl -s -o /dev/null -w "%{http_code}" $SERVERLESS_METRICS_YAML`
+if [ $GITHUB_HTTP_RESPONSE != 200 ]; then
+   echo -e "\nERROR: Your Github auth token is expired or invalid. You must do the following:"
+   echo "       1. In your browser, go to:"
+   echo "          https://github.com/cockroachlabs/managed-service/blob/master/pkg/otel/assets/metrics.yaml"
+   echo "       2. Click the Raw button."
+   echo "       3. Your URL will now contain the GitHub token for your session (valid for ~ 60 min)."
+   echo "       4. Paste just the token as the value to the GITHUB_TOKEN variable in $(basename $0)."
+   echo "       5. Save script, and re-run."
+   echo ""
+   echo -e "       Exiting ...\n"
+   exit;
+fi
+
+## Determine what to do with VERSION:
+if [[ ! -z $VERSION && `echo $VERSION | egrep -c '^[0-9]{1,2}\.[1-2]$'` -ne 1 ]]; then
    echo -e "\nERROR: Malformed version. Include a major version like 21.2 or 21.1."
    echo -e "       Exiting ...\n"
    exit;
+elif [[ ! -z $VERSION && "$VERSION" = "21.1" || "$VERSION" = "20.2" || "$VERSION" = "20.1" || "$VERSION" = "19.2" || "$VERSION" = "19.1" ]]; then
+   ## Not bothering to check previous to v19.1.
+   echo -e "\nERROR: Unfortunately, v21.1 and previously do not offer chartcatalog output"
+   echo "       As such, this script can only be used for CRDB versions v21.2 or later."
+   echo ""
+   echo -e "       Exiting ...\n"
+   exit;
+elif [ -z $VERSION ]; then
+   STABLE_VERSION=`grep 'stable:' $GITROOT/_config_cockroachdb.yml | awk -F ': ' '{print $2}' | sed 's%^v%%g'`
+   LOCAL_VERSION=`cockroach --version | grep 'Build Tag:' | awk -F ' v' '{print $2}'`
+   LOCAL_VERSION_SHORT=`echo $LOCAL_VERSION | egrep -o '[0-9]{1,2}\.[0-9]'`
+   if [ $STABLE_VERSION == $LOCAL_VERSION_SHORT ]; then
+      echo -e "\nYou did not specify a version using the -v flag, so using your local \`cockroach\`"
+      echo "binary version of $LOCAL_VERSION and updating the $STABLE_VERSION version of the docs."
+      echo ""
+      echo "IMPORTANT: Is your local $LOCAL_VERSION version of \`cockroach\` the latest version??"
+      echo ""
+      echo "           If not, you should ^C and go and update it first, before re-running $(basename $0)!"
+      echo "                   ... this script cannot update it for you!"
+   else
+      echo -e "\nERROR: You did not specify a version using the -v flag, so using your"
+      echo "       local \`cockroach\` binary version of $LOCAL_VERSION. However this does"
+      echo "       NOT match your docs repo's defined version for Stable of $STABLE_VERSION."
+      echo ""
+      echo "       Please make sure that:"
+      echo "          - docs have already been cut for the $LOCAL_VERSION version,"
+      echo "          - you use the -v flag to $(basename $0) to specify a version of \`cockroach\`"
+      echo "               that you do have locally on your machine (see my description to \`spinup\`"
+      echo "               for instructions on how to set up versioned \`cockroach-XX.X\` symlinks to"
+      echo "               support this), or"
+      echo "          - if you don't use the -v flag to $(basename $0), ensure your local \`cockroach\`"
+      echo "               is the version you expect."
+      echo ""
+      echo -e "       Exiting ...\n"
+      exit;
+   fi
+else
+   LOCAL_VERSION=`cockroach-$VERSION --version | grep 'Build Tag:' | awk -F ' v' '{print $2}'`
+   LOCAL_VERSION_SHORT=`echo $LOCAL_VERSION | egrep -o '[0-9]{1,2}\.[0-9]'`
+   echo ""
+   echo "IMPORTANT: Is your local $LOCAL_VERSION version of \`cockroach\` the latest version??"
+   echo ""
+   echo "           If not, you should ^C and go and update it first, before re-running $(basename $0)!"
+   echo "                   ... this script cannot update it for you!"
 fi
 
 ## Use `spinup` to build a quick local cluster based on the requested version
 ## See script comments in `spinup` for guidance on configuring your local
 ## CRDB versions to support this.
-if [ "$VERSION" = "22.1" ]; then
-   echo "Spinning up a $VERSION cluster to get the latest chartcatalog output"
+if [ -z $VERSION ]; then
+   VERSION=$STABLE_VERSION
+   echo -e "\nSpinning up a CockroachDB $LOCAL_VERSION cluster to get the latest chartcatalog output"
    ## Both: starts a cluster, and gets its DB Console web URL:
-   DBCONSOLE_URL=`spinup start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'` 
-elif [ "$VERSION" = "21.1" ]; then
-   echo "Unfortunately, v21.1 cannot be supported presently"
-   echo "as the v21.1 version does not offer chartcatalog output."
-   exit;
+   DBCONSOLE_URL=`spinup start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'`
 else
-   echo "Spinning up a $VERSION cluster to get the latest chartcatalog output"
+   echo -e "\nSpinning up a CockroachDB $LOCAL_VERSION cluster to get the latest chartcatalog output"
    ## Both: starts a cluster, and gets its DB Console web URL:
    DBCONSOLE_URL=`spinup -v $VERSION start | grep -o 'DB Console:.*' | awk -F ': ' '{print $2}'`
 fi
-
 
 ## Give the cluster a few seconds to be ready to serve HTTP endpoints.
 ## Without this, the HTTP endpoint sometimes 404s:
@@ -92,55 +197,79 @@ cat $TMPSPACE.chartcatalog | jq -r '.catalog[] | .subsections[] | .subsections[]
 IFS="
 "
 
+## Get upstream's Serverless metrics subset (for which we already got our GitHub token, right?):
+curl -s $SERVERLESS_METRICS_YAML > $TMPSPACE.metricslistraw
+
+for LINE in `cat $TMPSPACE.metricslistraw`; do
+   if [[ ! $LINE == "metrics:" ]]; then
+      echo $LINE | sed 's%^- %%g' >> $TMPSPACE.metricslist
+   fi
+done
+
+
+
+
+#cat $TMPSPACE.metricslist
+#exit;
+
+
+
 ## Recurse through each returned metric and check to see if it is
 ## already in our metric-names.md file. If not, add it to the running
 ## list and tally up:
+MISSING_METRICS_COUNT=0
 echo "Comparing metrics found to metrics listed in metric-names.md"
 for LINE in `cat $TMPSPACE.parsedcatalog`; do
     METRIC_NAME=`echo $LINE | awk -F '|' '{print $1}'`
     METRIC_HELP=`echo $LINE | awk -F '|' '{print $2}'`
-    ## If the following conditions are true:
-    ## - Metric is missing from metric-names.md, and
-    ## - Metric does not end in '.internal', and
-    ## - Metric does not begin with 'distsender.rpc.err.'
-    ## Then, write it to a missed_metrics file:
-    if [[ `grep -c "$METRIC_NAME" _includes/v$VERSION/metric-names.md` -lt 1 && \
-          `echo "$METRIC_NAME" | egrep -c ".internal$"` -lt 1 && \
-          `echo "$METRIC_NAME" | egrep -c "^distsender.rpc.err."` -lt 1 ]]; then
-       echo "\`$METRIC_NAME\` | $METRIC_HELP" >> $TMPSPACE.missed_metrics
-       MISSING_COUNT="$((MISSING_COUNT+1))"
+    ## Because upstream chose to list all metrics with underscores representing all of:
+    ## - periods
+    ## - hyphens
+    ## - oh and also underscores too,
+    ## we have to build this regex also for each:
+    METRIC_NAME_REGEX=`echo $METRIC_NAME | sed 's%\_%\.%g' | sed 's%\-%\.%g'`
+    ## If: Metric exists in $SERVERLESS_METRICS_YAML
+    ## Then: write it to a metrics_serverless file:
+
+#echo "for $METRIC_NAME made regex $METRIC_NAME_REGEX"
+
+    if [[ `egrep -c "$METRIC_NAME_REGEX" $TMPSPACE.metricslist` -gt 0 ]]; then
+       echo "\`$METRIC_NAME\` | $METRIC_HELP" >> $TMPSPACE.metrics_serverless
+       ((MISSING_METRICS_COUNT++))
+#echo "                 --> and we found it upstream"
+
     fi
-    TOTAL_COUNT="$((TOTAL_COUNT+1))"
+
 done
 
-## If missing metrics were detected, merge them into metric-names.md
-## in sorted fashion, and report our success:
-if [[ $MISSING_COUNT -gt 0 ]]; then
+## First, add missed metrics and sort based on first column:
+cat $TMPSPACE.metrics_serverless | sort -t\| -k1 | uniq > $TMPSPACE.metrics_serverless_sorted
 
-   ## First, copy exiting metrics from metric-names.md omitting the header:
-   cat _includes/v$VERSION/metric-names.md | tail -n +3 > $TMPSPACE.new_unsorted
-   echo "" >> $TMPSPACE.new_unsorted
+## Second, add header to blank file, then copy in merged, sorted metrics list:
+echo "Name | Description" > $TMPSPACE.new_assembled
+echo "-----|------------" >> $TMPSPACE.new_assembled
+cat $TMPSPACE.metrics_serverless_sorted >> $TMPSPACE.new_assembled
 
-   ## Second, add missed metrics and sort based on first column:
-   cat $TMPSPACE.missed_metrics >> $TMPSPACE.new_unsorted
-   cat $TMPSPACE.new_unsorted | sort -t\| -k1 > $TMPSPACE.new_sorted
+## Lastly, replace existing metric-names.md file with merged, sorted list:
+mv $TMPSPACE.new_assembled _includes/v$VERSION/metric-names-serverless.md
 
-   ## Third, add header to blank file, then copy in merged, sorted metrics list:
-   echo "Name | Description" > $TMPSPACE.new_assembled
-   echo "-----|-----" >> $TMPSPACE.new_assembled
-   cat $TMPSPACE.new_sorted >> $TMPSPACE.new_assembled
+## See if any were specified upstream but not present in chartcatalog, for
+## likely further investigation:
+for LINE in `cat $TMPSPACE.metricslist`; do
+   ## Again, we have to convert to a regex because upstream uses underscores for all
+   ## of: periods, hyphens, and also underscores:
+   LINE_REGEX=`echo $LINE | sed 's%\_%\.%g' | sed 's%\-%\.%g'`
 
-   ## Lastly, replace existing metric-names.md file with merged, sorted list:
-   mv $TMPSPACE.new_assembled _includes/v$VERSION/metric-names.md
+echo "for $LINE made regex $LINE_REGEX"
 
-   ## Report results:
-   echo -e "\nRESULTS: Found $MISSING_COUNT missing metrics out of $TOTAL_COUNT checked."
-   echo -e "         Added missing metrics to:  _includes/v$VERSION/metric-names.md\n"
-else
-   echo -e "\nRESULTS: No missing metrics out of $TOTAL_COUNT checked. Nice!\n"
-fi
+   if [ `egrep -c $LINE_REGEX _includes/v$VERSION/metric-names-serverless.md` -lt 1 ]; then
+      echo "WARNING: $LINE from upstream missing in chartcatalog output for v$VERSION"
+   fi
+done
 
 ## Clean up:
 rm -rf $TMPSPACE
+
+echo "Found $MISSING_METRICS_COUNT missing metrics"
 
 exit;
