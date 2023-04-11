@@ -1,0 +1,81 @@
+#!/bin/bash
+
+## Check to see if there are any cluster settings that have had their defaults
+## changed since the last version.
+
+## The real way to do this is comparing SHA diffs for go code changes that include
+## cluster settings definition scope. That's an enginering task.
+
+## So docs can do this sort of hacky workaround to get somewhat close to the ask.
+## Obviously a number of issues remain with this approach:
+
+## - I compare the most-recent last-major (here: v22.2.7) to the
+##   most-recent-current-testing-alpha (here: v23.1.0-alpha.9).
+##   - Changes from last GA to this GA are thus not captured, unless they were unchanged
+##     from last GA to most-recent last-major. Guess: most of them.
+## - I do not consider cluster settings descriptions in the diff, only data type and default.
+## - I can't determine if a cluster setting name has changed. Engineering for that.
+## - I'm using --format csv as a compromise. All formats use FSs that duplicate characters
+##   otherwise used in actual cluster settings descriptions or values. Building out a FS
+##   crawler was tricky given.
+## - Assuming we don't want to report the `version` variable's default value change.
+
+##### BEFORE YOU CAN BEGIN:
+
+## Make sure you have generated the following two files:
+## ~/crl/cockroach-v23.1.0-alpha.9.darwin-10.9-amd64/cockroach gen settings-list --format csv | grep -v '^Setting,Type,Default,Description$' | awk -F ','  '{print $1"___"$2"___"$3}' > /tmp/current-settings-list.txt
+## ~/crl/cockroach-v22.2.7.darwin-10.9-amd64/cockroach gen settings-list --format csv | grep -v '^Setting,Type,Default,Description$' | awk -F ',' '{print $1"___"$2"___"$3}' > /tmp/prev-settings-list.txt
+
+##### This script takes care of the rest:
+
+IFS="
+"
+
+cat /tmp/current-settings-list.txt | grep -v "^This cluster setting" | grep -v "^This session variable" | grep -v "^version_\_\_" > /tmp/current-settings-list-cleaned.txt
+cat /tmp/prev-settings-list.txt | grep -v "^This cluster setting" | grep -v "^This session variable" | grep -v "^version_\_\_" > /tmp/prev-settings-list-cleaned.txt
+
+for LINE in `cat /tmp/current-settings-list-cleaned.txt`; do
+   CSETTING=`echo $LINE | awk -F '___' '{print $1}'`
+   CDATATYPE=`echo $LINE | awk -F '___' '{print $2}'`
+   CDEFAULT=`echo $LINE | awk -F '___' '{print $3}'`
+
+
+#echo -e "\nNEW SETTING FOUND IN CURRENT: $CSETTING"
+#echo "    - Data type: $CDATATYPE"
+#echo "    - Default:   $CDEFAULT"
+
+   ## Note: trailing comma after $CSETTING enables us to match on just the first
+   ## field, but get the whole line. I know it looks strange.
+   PREV_SETTING_LINE=`egrep "^$CSETTING\_\_\_" /tmp/prev-settings-list-cleaned.txt`
+
+   ## NO PSETTING: we cannot hope to determine possible cluter settings name changes.
+   PDATATYPE=`echo $PREV_SETTING_LINE | awk -F '___' '{print $2}'`
+   PDEFAULT=`echo $PREV_SETTING_LINE | awk -F '___' '{print $3}'`
+
+#echo $PDATATYPE
+#echo $PDEFAULT
+#echo "found $CSETTING in previous"
+#echo "    - PSETTING_LINE: $PREV_SETTING_LINE"
+
+
+   if [[ -z $PREV_SETTING_LINE ]]; then
+      echo -e "\nNEW SETTING: $CSETTING:"
+      echo "  Data type: $CDATATYPE"
+      echo "    Default: $CDEFAULT"
+   elif [[ ! $CDATATYPE = $PDATATYPE || ! $CDEFAULT = $PDEFAULT ]]; then
+      if [[ ! $CDATATYPE = $PDATATYPE ]]; then
+         echo "FOUND: DATA TYPE CHANGE for $CSETTING:"
+         echo "       WAS: $PDATATYPE"
+         echo "       NOW: $CDATATYPE"
+      fi
+      if [[ ! $CDEFAULT = $PDEFAULT ]]; then
+         echo "FOUND: DEFAULT VALUE CHANGE for $CSETTING:"
+         echo "       WAS: $PDEFAULT"
+         echo "       NOW: $CDEFAULT"
+      fi
+   fi
+done
+
+echo -e "\nCompare complete!\n"
+
+exit
