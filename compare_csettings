@@ -3,7 +3,7 @@
 ## This script compares the output of `cockroach gen settings-list` from two
 ## different versions of CockroachDB to determine if there are any new settings,
 ## or if any existing settings have had either their default value or their
-## data type changed between th two.
+## data type changed between the two.
 
 ## The real way to do this is comparing SHA diffs for go code changes that include
 ## cluster settings definition scope. That's an enginering task.
