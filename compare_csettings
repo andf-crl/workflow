@@ -1,7 +1,9 @@
 #!/bin/bash
 
-## Check to see if there are any cluster settings that have had their defaults
-## changed since the last version.
+## This script compares the output of `cockroach gen settings-list` from two
+## different versions of CockroachDB to determine if there are any new settings,
+## or if any existing settings have had either their default value or their
+## data type changed between th two.
 
 ## The real way to do this is comparing SHA diffs for go code changes that include
 ## cluster settings definition scope. That's an enginering task.
@@ -29,7 +31,7 @@
 ## ~/crl/cockroach-v22.2.7.darwin-10.9-amd64/cockroach gen settings-list --format csv | grep -v '^Setting,Type,Default,Description$' | awk -F ',' '{print $1"___"$2"___"$3}' > /tmp/prev-settings-list.txt
 
 ## IMPORTANT:
-## - Select the right previous and current versions for these commands. This script only does as it's told.
+## - Select the right previous and current versions for these commands. This script only does as its told.
 ## - You must have the corresponding versions of cockroach on your system.
 ## - Update the example paths shown above to match yours. Or: use $PATH.
 
