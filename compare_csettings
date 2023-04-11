@@ -17,61 +17,64 @@
 ## - I can't determine if a cluster setting name has changed. Engineering for that.
 ## - I'm using --format csv as a compromise. All formats use FSs that duplicate characters
 ##   otherwise used in actual cluster settings descriptions or values. Building out a FS
-##   crawler was tricky given.
-## - Assuming we don't want to report the `version` variable's default value change.
+##   crawler was tricky given. I landed on the ridiculous '___' FS, but it works!
+## - Assuming we don't want to report the `version` variable's default value change, so omitting.
 
-##### BEFORE YOU CAN BEGIN:
+############################################################
+## BEFORE YOU CAN RUN THIS SCRIPT ##
+####################################
 
 ## Make sure you have generated the following two files:
 ## ~/crl/cockroach-v23.1.0-alpha.9.darwin-10.9-amd64/cockroach gen settings-list --format csv | grep -v '^Setting,Type,Default,Description$' | awk -F ','  '{print $1"___"$2"___"$3}' > /tmp/current-settings-list.txt
 ## ~/crl/cockroach-v22.2.7.darwin-10.9-amd64/cockroach gen settings-list --format csv | grep -v '^Setting,Type,Default,Description$' | awk -F ',' '{print $1"___"$2"___"$3}' > /tmp/prev-settings-list.txt
 
-##### This script takes care of the rest:
+## IMPORTANT:
+## - Select the right previous and current versions for these commands. This script only does as it's told.
+## - You must have the corresponding versions of cockroach on your system.
+## - Update the example paths shown above to match yours. Or: use $PATH.
+
+############################################################
+## BEGIN SCRIPT ##
+##################
+
+## No user-servicible parts below :)
 
 IFS="
 "
 
+## Read in both generated output files. Did you run the two commands above??
 cat /tmp/current-settings-list.txt | grep -v "^This cluster setting" | grep -v "^This session variable" | grep -v "^version_\_\_" > /tmp/current-settings-list-cleaned.txt
 cat /tmp/prev-settings-list.txt | grep -v "^This cluster setting" | grep -v "^This session variable" | grep -v "^version_\_\_" > /tmp/prev-settings-list-cleaned.txt
 
+## For each line encountered, isolate the strings of interest:
 for LINE in `cat /tmp/current-settings-list-cleaned.txt`; do
    CSETTING=`echo $LINE | awk -F '___' '{print $1}'`
    CDATATYPE=`echo $LINE | awk -F '___' '{print $2}'`
    CDEFAULT=`echo $LINE | awk -F '___' '{print $3}'`
 
-
-#echo -e "\nNEW SETTING FOUND IN CURRENT: $CSETTING"
-#echo "    - Data type: $CDATATYPE"
-#echo "    - Default:   $CDEFAULT"
-
-   ## Note: trailing comma after $CSETTING enables us to match on just the first
-   ## field, but get the whole line. I know it looks strange.
+   ## Note: ridiculous '\_\_\_' after $CSETTING enables us to match on just the first
+   ## field, but get the whole line. Some settings names appear elsewhere in output:
    PREV_SETTING_LINE=`egrep "^$CSETTING\_\_\_" /tmp/prev-settings-list-cleaned.txt`
 
    ## NO PSETTING: we cannot hope to determine possible cluter settings name changes.
    PDATATYPE=`echo $PREV_SETTING_LINE | awk -F '___' '{print $2}'`
    PDEFAULT=`echo $PREV_SETTING_LINE | awk -F '___' '{print $3}'`
 
-#echo $PDATATYPE
-#echo $PDEFAULT
-#echo "found $CSETTING in previous"
-#echo "    - PSETTING_LINE: $PREV_SETTING_LINE"
-
-
+   ## Compare then and now, reporting new and changed cluster settings:
    if [[ -z $PREV_SETTING_LINE ]]; then
-      echo -e "\nNEW SETTING: $CSETTING:"
-      echo "  Data type: $CDATATYPE"
-      echo "    Default: $CDEFAULT"
+      echo -e "\nNEW: $CSETTING:"
+      echo "     - TYPE: $CDATATYPE"
+      echo "     - DEFAULT: $CDEFAULT"
    elif [[ ! $CDATATYPE = $PDATATYPE || ! $CDEFAULT = $PDEFAULT ]]; then
       if [[ ! $CDATATYPE = $PDATATYPE ]]; then
-         echo "FOUND: DATA TYPE CHANGE for $CSETTING:"
-         echo "       WAS: $PDATATYPE"
-         echo "       NOW: $CDATATYPE"
+         echo -e "\nCHANGED: TYPE for $CSETTING:"
+         echo "         -  TYPE WAS: $PDATATYPE"
+         echo "         -  TYPE NOW: $CDATATYPE"
       fi
       if [[ ! $CDEFAULT = $PDEFAULT ]]; then
-         echo "FOUND: DEFAULT VALUE CHANGE for $CSETTING:"
-         echo "       WAS: $PDEFAULT"
-         echo "       NOW: $CDEFAULT"
+         echo -e "\nCHANGED: DEFAULT for $CSETTING:"
+         echo "         - DEFAULT WAS: $PDEFAULT"
+         echo "         - DEFAULT NOW: $CDEFAULT"
       fi
    fi
 done
