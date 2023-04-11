@@ -52,6 +52,11 @@ Consult `cluster-settings.md` page (as created by `build_settings`), and link al
 
 _Usage:_ `link_all_settings` from within the git branch whose cluster settings you'd like to link sitewide.
 
+## compare_csettings
+Compare two cluster settings tables to determine any changes between them: useful for determining if cluster settings defaults or data types have changed between versions. Also reports if new settings are detected.
+
+_Usage:_`compare_csettings` after running the two `cockroach` commands listed in the script's introductory comments.
+
 # Maintenance Workflow Tools
 Contains a collection of small support scripts for use alongside the above Core Workflow Tools.
 
